@@ -24,7 +24,7 @@ Clone the repository:
 
 ```bash
 git clone https://github.com/Ahsa6117/fastapi-task-api.git
-cd task-api
+cd fastapi-task-api
 ```
 
 Create a virtual environment:
@@ -42,7 +42,7 @@ Activate it on Windows:
 Install the dependencies:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ## Run the API
