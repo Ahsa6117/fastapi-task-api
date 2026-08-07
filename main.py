@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
+from typing import Literal
 
-from fastapi import FastAPI, Request, Response, status
+from fastapi import FastAPI, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -66,8 +67,8 @@ async def validation_exception_handler(
 def read_root():
     return {
         "name": "Task API",
-        "version": "1.0",
-        "endpoints": ["/tasks"],
+        "version": "2.0",
+        "endpoints": ["/tasks", "/stats"],
     }
 
 
@@ -85,8 +86,26 @@ def health_check():
     response_model=list[Task],
     summary="List all tasks",
 )
-def list_tasks():
-    return db.list_tasks()
+def list_tasks(
+    search: str | None = Query(
+        default=None,
+        description="Only tasks whose title contains this text",
+    ),
+    done: bool | None = Query(
+        default=None,
+        description="Filter by completion status",
+    ),
+    sort: Literal["id", "title"] = Query(
+        default="id",
+        description="Sort by id (default) or alphabetically by title",
+    ),
+):
+    return db.list_tasks(search=search, done=done, sort=sort)
+
+
+@app.get("/stats", summary="Count tasks")
+def read_stats():
+    return db.get_stats()
 
 
 @app.get(

@@ -38,6 +38,17 @@ def create_table(connection: sqlite3.Connection) -> None:
     )
 
 
+def create_index(connection: sqlite3.Connection) -> None:
+    """Index the column the search and sort extras query.
+
+    An index is a lookup structure the database keeps beside the table so
+    it can find matching rows without reading every one of them.
+    """
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tasks_title ON tasks (title)"
+    )
+
+
 def seed_if_empty(connection: sqlite3.Connection) -> None:
     """Insert the example tasks only when the table has no rows."""
     row = connection.execute("SELECT COUNT(*) AS total FROM tasks").fetchone()
@@ -50,9 +61,15 @@ def seed_if_empty(connection: sqlite3.Connection) -> None:
 
 
 def init_db() -> None:
-    """Create the database file, the table, and the first-run seed data."""
+    """Create the database file, the table, the index, and the seed data.
+
+    The `with` block is one transaction: if any statement fails, every
+    change in it is rolled back. That keeps startup all-or-nothing, so a
+    crash mid-seed can never leave one and a half example tasks behind.
+    """
     with get_connection() as connection:
         create_table(connection)
+        create_index(connection)
         seed_if_empty(connection)
 
 
@@ -69,13 +86,51 @@ def row_to_task(row: sqlite3.Row) -> dict:
 # Read
 # -------------------------
 
-def list_tasks() -> list[dict]:
+def list_tasks(
+    search: str | None = None,
+    done: bool | None = None,
+    sort: str = "id",
+) -> list[dict]:
+    """List tasks, letting the database do the filtering and sorting."""
+    sql = "SELECT id, title, done FROM tasks"
+    conditions: list[str] = []
+    values: list = []
+
+    if search:
+        conditions.append("title LIKE ?")
+        values.append(f"%{search}%")
+
+    if done is not None:
+        conditions.append("done = ?")
+        values.append(int(done))
+
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
+
+    # `sort` never reaches the SQL as user text: it only picks between two
+    # fixed clauses written here, so there is nothing to inject.
+    sql += " ORDER BY title COLLATE NOCASE" if sort == "title" else " ORDER BY id"
+
     with get_connection() as connection:
-        rows = connection.execute(
-            "SELECT id, title, done FROM tasks ORDER BY id"
-        ).fetchall()
+        rows = connection.execute(sql, values).fetchall()
 
     return [row_to_task(row) for row in rows]
+
+
+def get_stats() -> dict:
+    """Count tasks in SQL rather than counting rows in Python."""
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT
+                COUNT(*)                        AS total,
+                COALESCE(SUM(done), 0)          AS done,
+                COUNT(*) - COALESCE(SUM(done), 0) AS pending
+            FROM tasks
+            """
+        ).fetchone()
+
+    return {"total": row["total"], "done": row["done"], "pending": row["pending"]}
 
 
 def get_task(task_id: int) -> dict | None:
