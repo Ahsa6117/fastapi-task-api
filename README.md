@@ -1,17 +1,49 @@
 # Task API
 
-A small CRUD API built with Python and FastAPI. It manages an in-memory to-do list and supports creating, reading, updating, and deleting tasks.
+A small CRUD API built with Python and FastAPI. It manages a to-do list stored in a **SQLite** database, so tasks survive a server restart.
+
+This is Assignment 1's API with its storage layer swapped from an in-memory Python list to a real database. The endpoints, request bodies, responses, and status codes are all unchanged — only the code behind them changed.
 
 ## Features
 
-- Create new tasks
-- List all tasks
-- Get one task by ID
-- Update a task
-- Delete a task
-- Validate request bodies
-- Return appropriate HTTP status codes
+- Create, read, update, and delete tasks
+- Tasks stored in a SQLite database (`tasks.db`)
+- Database file, table, and example tasks all created automatically on first run
+- Every query is parameterized — no user input is ever glued into SQL text
+- Search, filter, sort, and task statistics computed by the database
+- Validate request bodies and return appropriate HTTP status codes
 - Interactive Swagger UI documentation
+
+## Why SQLite
+
+- **It is one file.** The whole database is `tasks.db` sitting next to the code. Backing it up is copying a file.
+- **Zero setup.** There is no database server to install, start, or configure, and no username or password. SQLite ships inside Python's standard library, so `import sqlite3` is the entire installation.
+- **It survives restarts.** This is the point of the change. In Assignment 1 the tasks lived in a Python list inside the running process, so stopping the server erased them. Now they live on disk and are still there tomorrow.
+- **It is a real database.** The same SQL used here — `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `WHERE`, `COUNT` — is what a Postgres or MySQL project would use later. Moving to a bigger database would change the connection code, not the endpoints.
+
+SQLite's limits show up when many servers need to write to the same data at once, which is when a client/server database like Postgres earns its extra setup. For a single-process API like this one, it is the right tool.
+
+## Where the database lives
+
+`tasks.db`, in the project root, created automatically the first time the server starts. Opening a SQLite file that does not exist creates it.
+
+It is listed in `.gitignore` and is **not** committed, so every clone starts from a fresh database with the three example tasks. Deleting `tasks.db` and restarting is a clean reset.
+
+On startup the app does three things, inside a single transaction:
+
+1. creates the `tasks` table if it is missing,
+2. creates an index on `title`,
+3. counts the rows and inserts the three example tasks **only if the count is 0**.
+
+That row count is what stops the examples from multiplying on every restart.
+
+## Schema
+
+| Column | Type | Notes |
+| ------ | ---- | ----- |
+| `id` | INTEGER | Primary key, assigned by the database |
+| `title` | TEXT | Not null |
+| `done` | INTEGER | `0` or `1`, defaults to `0`, returned as JSON `true`/`false` |
 
 ## Requirements
 
@@ -47,6 +79,8 @@ python -m pip install -r requirements.txt
 
 ## Run the API
 
+One command, and the database creates itself:
+
 ```bash
 fastapi dev main.py
 ```
@@ -63,6 +97,8 @@ Swagger UI:
 http://127.0.0.1:8000/docs
 ```
 
+On a clean clone this creates `tasks.db`, creates the `tasks` table, seeds the three example tasks, and serves them at `GET /tasks`. No manual database setup.
+
 ## Endpoints
 
 | Method | Endpoint          | Description         | Success status |
@@ -71,9 +107,20 @@ http://127.0.0.1:8000/docs
 | GET    | /health           | Check server health | 200            |
 | GET    | /tasks            | List all tasks      | 200            |
 | GET    | /tasks/{task_id}  | Get one task        | 200            |
+| GET    | /stats            | Count tasks         | 200            |
 | POST   | /tasks            | Create a task       | 201            |
 | PUT    | /tasks/{task_id}  | Update a task       | 200            |
 | DELETE | /tasks/{task_id}  | Delete a task       | 204            |
+
+### Query parameters on `GET /tasks`
+
+| Parameter | Example | SQL behind it |
+| --------- | ------- | ------------- |
+| `search` | `/tasks?search=milk` | `WHERE title LIKE '%milk%'` |
+| `done` | `/tasks?done=true` | `WHERE done = ?` |
+| `sort` | `/tasks?sort=title` | `ORDER BY title COLLATE NOCASE` |
+
+The filtering happens inside the database, not in a Python loop.
 
 ## Create a Task
 
@@ -98,9 +145,48 @@ content-type: application/json
 }
 ```
 
-## Swagger UI
+Stop the server, start it again, and `GET /tasks` still returns that task.
 
-![Swagger UI](images/swagger.png)
+## Example SQL query
+
+Run by hand against `tasks.db` while the server was running:
+
+```sql
+UPDATE tasks SET done = 1 WHERE id = 2;
+```
+
+It reported `1 row changed`, and `GET /tasks/2` immediately returned `{"id": 2, "title": "Build CRUD API", "done": true}` — with no restart, because the API and the SQL client read the exact same file. There is one source of truth, and no syncing step.
+
+The full Stage 4 session, including `SELECT`, `COUNT(*)`, and `DELETE`, is in [docs/sql-exploration.md](docs/sql-exploration.md).
+
+## Database screenshot
+
+`tasks.db` open in DB Browser for SQLite, showing the same rows the API serves:
+
+![tasks.db in DB Browser for SQLite](images/db-browser.png)
+
+## Parameterized queries
+
+Every value that comes from a request is passed to SQLite as a `?` parameter, separately from the SQL text:
+
+```python
+connection.execute(
+    "SELECT id, title, done FROM tasks WHERE id = ?",
+    (task_id,),
+)
+```
+
+The alternative — building the query with an f-string — would let a request's contents be read as SQL commands. Keeping data out of the SQL text makes that impossible.
+
+## Testing
+
+`smoke_test.py` contains the Assignment 1 endpoint checks, unchanged, run against the SQLite version:
+
+```bash
+python smoke_test.py
+```
+
+All 20 pass. That is the interesting part: the tests were written against a version that stored tasks in a Python list, and they still pass now that tasks live on disk. Tests describe what the API promises, and the promise did not change — where the data is kept is an implementation detail hidden behind the endpoints. The same tests would pass again if this moved to Postgres tomorrow.
 
 ## Status Codes
 
@@ -112,8 +198,19 @@ content-type: application/json
 | 400    | Invalid request body           |
 | 404    | Task was not found             |
 
-## In-Memory Storage
+## Project structure
 
-This project stores tasks in a Python list rather than a database. Any tasks created or updated while the server is running will be lost when the server restarts.
+```
+main.py          FastAPI app and the endpoints
+db.py            the storage layer: every SQL query lives here
+smoke_test.py    the Assignment 1 endpoint checks
+docs/            Stage 4 SQL exploration notes
+tasks.db         the database (created automatically, not committed)
+```
 
-A database would provide permanent storage, which will be added in a later project.
+The endpoints in `main.py` never write SQL themselves. They call functions in `db.py`, which is what made this migration a change to one file rather than a rewrite.
+
+## Notes on the index and the transaction
+
+- **The index.** `CREATE INDEX idx_tasks_title ON tasks (title)` gives the database a sorted lookup structure for `title`, so a search or an alphabetical sort can find rows without scanning every one. It costs a little extra work on every write in exchange for much faster reads.
+- **The transaction.** Startup wraps table creation, index creation, and seeding in one transaction, so all of it happens or none of it does. Without that, a crash halfway through seeding could leave the table with one or two example tasks and no way to tell that the seed was incomplete.
