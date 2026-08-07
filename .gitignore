@@ -1,3 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+
+# The database is created automatically on first run, so every clone
+# starts from a fresh, freshly seeded tasks.db.
+tasks.db

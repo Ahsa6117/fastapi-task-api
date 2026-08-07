@@ -1,12 +1,26 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import db
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Runs once when the server starts: creates tasks.db, the tasks
+    # table, and the three example tasks if the table is still empty.
+    db.init_db()
+    yield
+
+
 app = FastAPI(
     title="Task API",
-    version="1.0",
-    description="A small in-memory CRUD API for managing to-do tasks.",
+    version="2.0",
+    description="A small CRUD API for managing to-do tasks, stored in SQLite.",
+    lifespan=lifespan,
 )
 
 
