@@ -44,17 +44,6 @@ class TaskUpdate(BaseModel):
 
 
 # -------------------------
-# In-memory data
-# -------------------------
-
-tasks: list[dict] = [
-    {"id": 1, "title": "Learn FastAPI", "done": False},
-    {"id": 2, "title": "Build CRUD API", "done": False},
-    {"id": 3, "title": "Publish to GitHub", "done": False},
-]
-
-
-# -------------------------
 # Error handling
 # -------------------------
 
@@ -66,17 +55,6 @@ async def validation_exception_handler(
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content={"error": "Invalid request body"},
-    )
-
-
-# -------------------------
-# Helper function
-# -------------------------
-
-def find_task(task_id: int) -> dict | None:
-    return next(
-        (task for task in tasks if task["id"] == task_id),
-        None,
     )
 
 
@@ -108,7 +86,7 @@ def health_check():
     summary="List all tasks",
 )
 def list_tasks():
-    return tasks
+    return db.list_tasks()
 
 
 @app.get(
@@ -117,7 +95,7 @@ def list_tasks():
     summary="Get one task",
 )
 def get_task(task_id: int):
-    task = find_task(task_id)
+    task = db.get_task(task_id)
 
     if task is None:
         return JSONResponse(

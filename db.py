@@ -54,3 +54,36 @@ def init_db() -> None:
     with get_connection() as connection:
         create_table(connection)
         seed_if_empty(connection)
+
+
+def row_to_task(row: sqlite3.Row) -> dict:
+    """Turn a database row into the JSON shape the API has always returned."""
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "done": bool(row["done"]),
+    }
+
+
+# -------------------------
+# Read
+# -------------------------
+
+def list_tasks() -> list[dict]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            "SELECT id, title, done FROM tasks ORDER BY id"
+        ).fetchall()
+
+    return [row_to_task(row) for row in rows]
+
+
+def get_task(task_id: int) -> dict | None:
+    with get_connection() as connection:
+        # The ? placeholder keeps the id out of the SQL text itself.
+        row = connection.execute(
+            "SELECT id, title, done FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+
+    return row_to_task(row) if row else None
