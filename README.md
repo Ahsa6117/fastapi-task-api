@@ -188,6 +188,92 @@ python smoke_test.py
 
 All 20 pass. That is the interesting part: the tests were written against a version that stored tasks in a Python list, and they still pass now that tasks live on disk. Tests describe what the API promises, and the promise did not change — where the data is kept is an implementation detail hidden behind the endpoints. The same tests would pass again if this moved to Postgres tomorrow.
 
+## AI vs me
+
+I built Stages 0–5 by hand, then asked an AI assistant to do the same
+memory-to-SQLite migration and reviewed its work. Its code lives in
+[`ai-version/`](ai-version/) and was never merged — the submission is hand-built.
+
+Caveat worth stating: the same model wrote both sides, so this is a softer test
+than using a different assistant. The AI version was generated from the prompt
+alone, and every finding below came from running it.
+
+### The prompt I gave it
+
+> I have a FastAPI to-do API that keeps its tasks in a Python list in memory.
+> Move the storage to SQLite using Python's built-in `sqlite3` module.
+>
+> - The database file should be called `tasks.db` and be created automatically
+>   if it does not exist.
+> - Create a table called `tasks` if it is missing, with columns: `id`
+>   (integer, primary key, assigned by the database), `title` (text), and
+>   `done` (boolean stored as 0 or 1).
+> - Seed three example tasks, but only if the table is empty.
+> - Keep the same five endpoints with the same behaviour: `GET /tasks`,
+>   `GET /tasks/{id}`, `POST /tasks`, `PUT /tasks/{id}`, `DELETE /tasks/{id}`.
+> - A missing or empty title returns 400. An unknown id returns 404. Creating
+>   returns 201, deleting returns 204.
+> - Use parameterized queries, never string formatting, for anything that
+>   comes from a request.
+>
+> Give me the full file.
+
+### It ran on the first try
+
+It created the database, seeded exactly three tasks, did not re-seed on
+restart, and data survived being stopped and started. The headline feature
+worked. The differences are all in the details my prompt left open.
+
+### What it did better
+
+It used SQLite's **`RETURNING` clause** — `INSERT INTO tasks (...) VALUES (?, ?)
+RETURNING id, title, done` — so the insert hands back the row that was actually
+written. My version takes `cursor.lastrowid` and rebuilds the response from the
+values I sent, which quietly *assumes* the stored row matches what I gave it. On
+`UPDATE` it is a bigger win: `UPDATE ... RETURNING` returns nothing when no row
+matched, which replaced my separate `SELECT`-then-`UPDATE` 404 check with one
+statement.
+
+### What it got wrong
+
+1. **Error bodies changed shape** — `{"detail": "Task not found"}` instead of
+   A1's `{"error": ...}`. The status code is right, so this passes a careless
+   test and breaks every client.
+2. **Invalid bodies returned 422**, FastAPI's default, not the required 400.
+3. **`PUT` stopped being partial** — `{"done": true}` returned 422, because it
+   typed the body as requiring both fields.
+4. **A whitespace-only title returned 201** and stored a blank task. It never
+   stripped the string.
+5. **`DB_PATH = "tasks.db"` is relative to the working directory.** Starting the
+   app from another folder created a second, empty, freshly seeded database —
+   which to a user looks exactly like losing all their data. This is the one I
+   would call a genuine bug.
+6. **One shared connection** with `check_same_thread=False`, shared across
+   FastAPI's thread pool — a real trade-off, decided silently.
+7. **No `ORDER BY`**, so row order is whatever SQLite finds convenient.
+
+### What my prompt forgot
+
+All seven trace back to the prompt, not to the model. I described the *schema*
+precisely and the *behaviour* in slogans — "keep the same endpoints", "same
+behaviour". The schema came back perfect; the behaviour came back as the model's
+best guess. "Same as before" means nothing to something that cannot see the
+before.
+
+I found all seven in about ten minutes only because I had already made all seven
+decisions myself over the previous five stages. I was not checking the output
+against the prompt — I was checking it against a version I understood.
+
+### The rematch
+
+Prompt v2 stated all seven explicitly. Every difference disappeared, and the
+regenerated version passes all 20 checks in `smoke_test.py` **unmodified** —
+which v1 could not even be run against, since it had no separate storage module
+to point the tests at. It kept the `RETURNING` improvement, so v2 is better than
+my hand-built version rather than a copy of it.
+
+Full write-up, prompts, and the diff: [docs/ai-vs-me.md](docs/ai-vs-me.md).
+
 ## Status Codes
 
 | Status | Meaning                        |
