@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FlyRank W3 A2 — Connecting a CRUD API to a Database</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm; }
+  @page :first { margin: 0; }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.2pt;
+    line-height: 1.55;
+    color: #1a1d21;
+    margin: 0;
+  }
+
+  /* ---------- cover ---------- */
+  .cover {
+    height: 297mm;
+    padding: 36mm 24mm 20mm 24mm;
+    display: flex;
+    flex-direction: column;
+    border-top: 10mm solid #14304d;
+    page-break-after: always;
+  }
+  .cover .eyebrow {
+    font-size: 9.5pt; letter-spacing: .16em; text-transform: uppercase;
+    color: #5a6672; font-weight: 600; margin-bottom: 10mm;
+  }
+  .cover h1 {
+    font-size: 30pt; line-height: 1.15; margin: 0 0 6mm 0;
+    color: #14304d; font-weight: 700; letter-spacing: -.01em;
+  }
+  .cover .sub {
+    font-size: 13pt; color: #3f4a56; font-weight: 400; margin: 0 0 auto 0;
+    max-width: 130mm;
+  }
+  .cover .rule { width: 34mm; height: 3px; background: #c9a227; margin: 8mm 0; }
+  .meta { border-top: 1px solid #d4dae0; padding-top: 6mm; }
+  .meta table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+  .meta td { padding: 1.6mm 0; vertical-align: top; }
+  .meta td.k { color: #5a6672; width: 34mm; font-weight: 600; }
+  .meta td.v { color: #1a1d21; }
+
+  /* ---------- structure ---------- */
+  h2 {
+    font-size: 15pt; color: #14304d; margin: 9mm 0 3mm 0;
+    padding-bottom: 1.6mm; border-bottom: 2px solid #14304d;
+    page-break-after: avoid; font-weight: 700;
+  }
+  h3 {
+    font-size: 11.6pt; color: #1f3a5c; margin: 6mm 0 2mm 0;
+    page-break-after: avoid; font-weight: 700;
+  }
+  h4 {
+    font-size: 10.4pt; color: #35424f; margin: 4.5mm 0 1.5mm 0;
+    page-break-after: avoid; font-weight: 700;
+  }
+  p { margin: 0 0 2.6mm 0; }
+  ul, ol { margin: 0 0 3mm 0; padding-left: 5.5mm; }
+  li { margin-bottom: 1.4mm; }
+  .break { page-break-before: always; }
+  section { page-break-inside: auto; }
+
+  /* ---------- tables ---------- */
+  table.data {
+    width: 100%; border-collapse: collapse; margin: 3mm 0 4mm 0;
+    font-size: 9.3pt; page-break-inside: avoid;
+  }
+  table.data th {
+    background: #14304d; color: #fff; text-align: left;
+    padding: 2.2mm 2.6mm; font-weight: 600; font-size: 9pt;
+    letter-spacing: .02em;
+  }
+  table.data td {
+    padding: 2mm 2.6mm; border-bottom: 1px solid #e2e7ec; vertical-align: top;
+  }
+  table.data tr:nth-child(even) td { background: #f6f8fa; }
+  table.data code { font-size: 8.8pt; }
+
+  /* ---------- code ---------- */
+  code {
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 9pt; background: #eef1f4; padding: .3mm 1.1mm;
+    border-radius: 2px; color: #143a2b;
+  }
+  pre {
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 8.8pt; line-height: 1.45;
+    background: #f6f8fa; border: 1px solid #dde3e9;
+    border-left: 3px solid #14304d;
+    padding: 2.8mm 3.4mm; margin: 2.5mm 0 3.5mm 0;
+    white-space: pre-wrap; word-wrap: break-word;
+    page-break-inside: avoid; border-radius: 2px;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; color: #1a1d21; }
+  pre.term { background: #14212e; border-color: #14212e; border-left-color: #c9a227; }
+  pre.term code { color: #dfe6ec; }
+  pre.term .ok { color: #7ddba3; }
+  pre.term .warn { color: #f0c674; }
+  pre.term .cmd { color: #8fc7ff; }
+  pre.term .dim { color: #8b9aa8; }
+
+  /* ---------- callouts ---------- */
+  .note {
+    border: 1px solid #d4dae0; border-left: 3px solid #c9a227;
+    background: #fdfaf1; padding: 2.8mm 3.4mm; margin: 3mm 0;
+    font-size: 9.4pt; page-break-inside: avoid; border-radius: 2px;
+  }
+  .note .lbl {
+    display: block; font-weight: 700; color: #7a5c00;
+    font-size: 8.6pt; letter-spacing: .08em; text-transform: uppercase;
+    margin-bottom: 1.2mm;
+  }
+  .key {
+    border: 1px solid #cfe0d4; border-left: 3px solid #2e7d4f;
+    background: #f3faf5; padding: 2.8mm 3.4mm; margin: 3mm 0;
+    font-size: 9.4pt; page-break-inside: avoid; border-radius: 2px;
+  }
+  .key .lbl {
+    display: block; font-weight: 700; color: #1e5c39;
+    font-size: 8.6pt; letter-spacing: .08em; text-transform: uppercase;
+    margin-bottom: 1.2mm;
+  }
+
+  /* ---------- figures ---------- */
+  figure { margin: 4mm 0 5mm 0; page-break-inside: avoid; }
+  figure img {
+    width: 100%; height: auto; display: block;
+    border: 1px solid #c8d0d8; border-radius: 2px;
+  }
+  figcaption {
+    font-size: 8.8pt; color: #5a6672; margin-top: 1.8mm;
+    padding-left: 1mm; border-left: 2px solid #c9a227; padding-left: 2.4mm;
+  }
+  figcaption b { color: #14304d; }
+
+  /* ---------- architecture diagram ---------- */
+  .arch { margin: 4mm 0 5mm 0; page-break-inside: avoid; }
+  .arch-row {
+    display: flex; align-items: center; gap: 3mm;
+    padding: 3mm; border: 1px solid #dde3e9; border-radius: 3px;
+    margin-bottom: 2.5mm; background: #f6f8fa;
+  }
+  .arch-row .tag {
+    flex: 0 0 22mm; font-size: 8.4pt; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em; color: #5a6672;
+  }
+  .box {
+    border: 1.5px solid #14304d; background: #fff; color: #14304d;
+    padding: 2mm 3mm; font-size: 9pt; font-weight: 600;
+    border-radius: 2px; text-align: center; min-width: 26mm;
+  }
+  .box.store { border-color: #2e7d4f; color: #1e5c39; background: #f3faf5; }
+  .box.gone  { border-color: #b0403a; color: #8c2f2a; background: #fdf4f3;
+               text-decoration: line-through; }
+  .arrow { color: #8b9aa8; font-size: 11pt; font-weight: 700; }
+
+  .checkmark { color: #2e7d4f; font-weight: 700; }
+  .cross { color: #b0403a; font-weight: 700; }
+  .muted { color: #5a6672; }
+  .small { font-size: 9pt; }
+
+  /* ---------- toc ---------- */
+  .toc { columns: 2; column-gap: 10mm; font-size: 9.6pt; }
+  .toc div { margin-bottom: 1.6mm; break-inside: avoid; }
+  .toc .n { display: inline-block; width: 7mm; color: #5a6672; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<div class="cover">
+  <div class="eyebrow">FlyRank Internship &middot; Backend Track &middot; Week 3</div>
+  <h1>Connecting a CRUD API<br>to a Database</h1>
+  <div class="rule"></div>
+  <p class="sub">Migrating a FastAPI task management service from in-memory
+  storage to a persistent SQLite database, without altering its public
+  interface.</p>
+
+  <div class="meta">
+    <table>
+      <tr><td class="k">Assignment</td><td class="v">A2 — Connecting your CRUD to the database</td></tr>
+      <tr><td class="k">Author</td><td class="v">Ahsan Choudhry</td></tr>
+      <tr><td class="k">Lane</td><td class="v">Python — FastAPI, <code>sqlite3</code> (standard library)</td></tr>
+      <tr><td class="k">Repository</td><td class="v">github.com/Ahsa6117/fastapi-task-api</td></tr>
+      <tr><td class="k">Date</td><td class="v">8 August 2026</td></tr>
+      <tr><td class="k">Predecessor</td><td class="v">A1 — Build your first CRUD API</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ============ SUMMARY + TOC ============ -->
+<section>
+<h2>Executive summary</h2>
+
+<p>This report documents the migration of a task management REST API from
+in-memory storage to a SQLite database. The objective was persistence: data
+created through the API had to survive a server restart.</p>
+
+<p>The migration was completed across six stages, each ending in a verified
+checkpoint and a separate commit. All storage logic was isolated into a single
+new module, <code>db.py</code>, leaving the route handlers in
+<code>main.py</code> structurally unchanged. The API's public contract — its
+endpoints, request bodies, response shapes, and status codes — was preserved
+exactly.</p>
+
+<p>The strongest evidence for that claim is that the endpoint tests written
+against the in-memory version pass without modification against the database
+version. All 20 checks pass. Because those tests describe the API's promises
+rather than its internals, their continued success demonstrates that storage is
+an implementation detail hidden behind the interface.</p>
+
+<div class="key">
+  <span class="lbl">Principal result</span>
+  Tasks created through <code>POST /tasks</code> persist across server
+  restarts and are independently visible in the database file. The API surface
+  did not change: the same test suite validates both the old and new
+  implementations.
+</div>
+
+<h2>Contents</h2>
+<div class="toc">
+  <div><span class="n">1</span>Objective and scope</div>
+  <div><span class="n">2</span>Architecture</div>
+  <div><span class="n">3</span>Technology selection</div>
+  <div><span class="n">4</span>Database design</div>
+  <div><span class="n">5</span>Implementation</div>
+  <div><span class="n">6</span>Query safety</div>
+  <div><span class="n">7</span>Verification and testing</div>
+  <div><span class="n">8</span>Direct database inspection</div>
+  <div><span class="n">9</span>API surface</div>
+  <div><span class="n">10</span>Extensions beyond scope</div>
+  <div><span class="n">11</span>AI-assisted comparison</div>
+  <div><span class="n">12</span>Requirements traceability</div>
+  <div><span class="n">13</span>Discussion</div>
+  <div><span class="n">A</span>Repository structure</div>
+  <div><span class="n">B</span>Commit history</div>
+  <div><span class="n">C</span>Operating instructions</div>
+</div>
+</section>
+
+<!-- ============ 1 ============ -->
+<section class="break">
+<h2>1 &nbsp;Objective and scope</h2>
+
+<p>The predecessor assignment produced a functioning CRUD API whose tasks were
+held in a Python list. That list lived inside the running process, so every
+restart erased all data. This was a known limitation, not a defect.</p>
+
+<h3>1.1 &nbsp;In scope</h3>
+<ul>
+  <li>Replace the in-memory list with a SQLite database stored in
+      <code>tasks.db</code>.</li>
+  <li>Create the database file, its schema, and initial example data
+      automatically, with no manual setup step.</li>
+  <li>Preserve every endpoint's behaviour: paths, request bodies, response
+      bodies, and status codes.</li>
+  <li>Use parameterized queries for all values originating in a request.</li>
+</ul>
+
+<h3>1.2 &nbsp;Explicitly out of scope</h3>
+<ul>
+  <li>Any change to the API's public contract. The governing constraint was
+      that a client must be unable to detect the migration.</li>
+  <li>Authentication, multi-user support, and schema migration tooling.</li>
+</ul>
+
+<h3>1.3 &nbsp;Success criteria</h3>
+<table class="data">
+  <tr><th style="width:52%">Criterion</th><th>Method of verification</th></tr>
+  <tr><td>Data survives a restart</td><td>Create via API, stop process, start process, read back</td></tr>
+  <tr><td>API contract unchanged</td><td>Pre-existing test suite passes unmodified</td></tr>
+  <tr><td>Zero-setup installation</td><td>Clean clone from remote, single command, working app</td></tr>
+  <tr><td>Seed data not duplicated</td><td>Repeated restarts, row count observed</td></tr>
+  <tr><td>No SQL injection surface</td><td>Code review of every query construction site</td></tr>
+</table>
+</section>
+
+<!-- ============ 2 ============ -->
+<section>
+<h2>2 &nbsp;Architecture</h2>
+
+<p>The application is a three-layer system. Only the lowest layer was replaced.</p>
+
+<div class="arch">
+  <div class="arch-row">
+    <span class="tag">Before</span>
+    <span class="box">Client</span>
+    <span class="arrow">&rarr;</span>
+    <span class="box">FastAPI routes</span>
+    <span class="arrow">&rarr;</span>
+    <span class="box gone">Python list (volatile)</span>
+  </div>
+  <div class="arch-row">
+    <span class="tag">After</span>
+    <span class="box">Client</span>
+    <span class="arrow">&rarr;</span>
+    <span class="box">FastAPI routes</span>
+    <span class="arrow">&rarr;</span>
+    <span class="box">db.py</span>
+    <span class="arrow">&rarr;</span>
+    <span class="box store">SQLite &mdash; tasks.db</span>
+  </div>
+</div>
+
+<table class="data">
+  <tr>
+    <th style="width:20%">Layer</th>
+    <th style="width:27%">Assignment 1</th>
+    <th style="width:33%">Assignment 2</th>
+    <th>Client-visible?</th>
+  </tr>
+  <tr><td>Client</td><td>Sends HTTP requests</td><td>Sends identical requests</td><td class="muted">&mdash;</td></tr>
+  <tr><td>Routes</td><td>Validate, return JSON</td><td>Unchanged</td><td><span class="cross">No</span></td></tr>
+  <tr><td>Storage</td><td>List in a variable</td><td>Rows in <code>tasks.db</code></td><td><span class="cross">No</span></td></tr>
+  <tr><td>After restart</td><td>Data lost</td><td>Data retained</td><td><span class="checkmark">Yes</span></td></tr>
+</table>
+
+<h3>2.1 &nbsp;Separation of concerns</h3>
+
+<p>A dedicated storage module was introduced rather than embedding SQL in the
+route handlers. The endpoints call named functions such as
+<code>db.get_task(task_id)</code> and never compose SQL themselves.</p>
+
+<p>This decision is what reduced the migration to an edit of one file plus
+one-line substitutions in the routes. It also produces a second benefit: the
+system could be moved to PostgreSQL by rewriting <code>db.py</code> alone, and
+the test suite in <a>Section 7</a> would again serve as the proof of
+equivalence.</p>
+
+<div class="key">
+  <span class="lbl">Design principle</span>
+  The API is the promise; the database is where the promise is kept. Swapping
+  the storage keeps the promise intact.
+</div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section>
+<h2>3 &nbsp;Technology selection</h2>
+
+<table class="data">
+  <tr><th style="width:26%">Component</th><th style="width:26%">Selection</th><th>Rationale</th></tr>
+  <tr><td>Language</td><td>Python 3.10+</td><td>Continuity with the predecessor assignment</td></tr>
+  <tr><td>Framework</td><td>FastAPI</td><td>Existing application; validation and OpenAPI included</td></tr>
+  <tr><td>Database</td><td>SQLite</td><td>See rationale below</td></tr>
+  <tr><td>Driver</td><td><code>sqlite3</code></td><td>Standard library; no dependency added</td></tr>
+  <tr><td>Inspection</td><td>DB Browser for SQLite</td><td>Independent verification of stored state</td></tr>
+</table>
+
+<h3>3.1 &nbsp;Why SQLite</h3>
+
+<p><b>It is a single file.</b> The entire database is <code>tasks.db</code>
+beside the application code. Backup is a file copy; reset is a file deletion.</p>
+
+<p><b>Zero configuration.</b> There is no server process to install, start, or
+secure, and no credentials to manage. The driver ships inside Python's standard
+library, so the project's dependency list did not grow by a single entry.</p>
+
+<p><b>It provides genuine persistence.</b> This is the objective of the
+assignment. Data written to disk is available to the next process that opens
+the file.</p>
+
+<p><b>The skills transfer.</b> The SQL used here — <code>SELECT</code>,
+<code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>,
+<code>WHERE</code>, <code>COUNT</code> — is the same language a PostgreSQL or
+MySQL deployment would use.</p>
+
+<h3>3.2 &nbsp;Acknowledged limitations</h3>
+
+<p>SQLite serialises write access to the database file. Under concurrent
+writers, a client/server engine such as PostgreSQL becomes the appropriate
+choice, and its additional operational cost is then justified. For a
+single-process API of this size, that cost would buy nothing. The selection is
+therefore correct <i>for the current requirements</i>, and is expected to be
+revisited if those requirements change.</p>
+</section>
+
+<!-- ============ 4 ============ -->
+<section class="break">
+<h2>4 &nbsp;Database design</h2>
+
+<h3>4.1 &nbsp;Schema</h3>
+
+<table class="data">
+  <tr><th style="width:18%">Column</th><th style="width:18%">Type</th><th style="width:22%">Constraints</th><th>Notes</th></tr>
+  <tr><td><code>id</code></td><td>INTEGER</td><td>PRIMARY KEY, AUTOINCREMENT</td><td>Assigned by the database, not the application</td></tr>
+  <tr><td><code>title</code></td><td>TEXT</td><td>NOT NULL</td><td>Whitespace-trimmed before storage</td></tr>
+  <tr><td><code>done</code></td><td>INTEGER</td><td>NOT NULL, DEFAULT 0</td><td>Stored as 0/1; serialised to JSON <code>true</code>/<code>false</code></td></tr>
+</table>
+
+<pre><code>CREATE TABLE IF NOT EXISTS tasks (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT    NOT NULL,
+    done  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_title ON tasks (title);</code></pre>
+
+<p>SQLite has no dedicated boolean type. The <code>done</code> column is
+therefore an integer constrained by convention to 0 or 1. Translation to and
+from JSON booleans happens in the storage layer, so the database's
+representation never leaks into the API response — a point demonstrated
+visually in Section 8.</p>
+
+<h3>4.2 &nbsp;Idempotent initialisation</h3>
+
+<p>Startup performs three operations, all of which are safe to repeat:</p>
+
+<ol>
+  <li>Create the table if it does not exist.</li>
+  <li>Create the title index if it does not exist.</li>
+  <li>Count existing rows; insert three example tasks <i>only if the count is
+      zero</i>.</li>
+</ol>
+
+<p>The row count in step 3 is the mechanism that prevents seed data from
+accumulating on every launch. An unconditional insert would add three more
+tasks each time the process started.</p>
+
+<h3>4.3 &nbsp;Transactional startup</h3>
+
+<p>All three operations execute inside a single transaction. If any statement
+fails, every change is rolled back.</p>
+
+<pre><code>def init_db() -> None:
+    with get_connection() as connection:
+        create_table(connection)
+        create_index(connection)
+        seed_if_empty(connection)</code></pre>
+
+<p>The failure this guards against is specific: a crash midway through seeding
+would otherwise leave the table holding one or two example tasks. On the next
+launch the row count would be non-zero, the seed would be skipped, and the
+database would remain permanently and silently incomplete. Atomicity removes
+that possibility — either all three tasks are present, or none are and the seed
+runs again.</p>
+</section>
+
+<!-- ============ 5 ============ -->
+<section>
+<h2>5 &nbsp;Implementation</h2>
+
+<p>Work proceeded in six stages, each concluding with an executable checkpoint
+and a discrete commit.</p>
+
+<table class="data">
+  <tr><th style="width:7%">Stage</th><th style="width:31%">Deliverable</th><th style="width:33%">Checkpoint</th><th>Result</th></tr>
+  <tr><td>0</td><td>Database, schema, seed</td><td>Three restarts, count rows</td><td>3 tasks &mdash; no duplication</td></tr>
+  <tr><td>1</td><td>Read endpoints on SQL</td><td><code>GET /tasks</code>, <code>GET /tasks/999</code></td><td>200 &middot; 404</td></tr>
+  <tr><td>2</td><td>Insert</td><td>Create, restart, read back</td><td>Data retained</td></tr>
+  <tr><td>3</td><td>Update and delete</td><td>Full lifecycle with restart</td><td>201 &middot; 200 &middot; 204 &middot; 404</td></tr>
+  <tr><td>4</td><td>Direct SQL inspection</td><td>Hand edit visible via API</td><td>Reflected, no restart</td></tr>
+  <tr><td>5</td><td>Documentation, publication</td><td>Clean clone, one command</td><td>Working app</td></tr>
+</table>
+
+<h3>5.1 &nbsp;Stage 0 — Database creation</h3>
+
+<p>Opening a SQLite file that does not exist creates it, so no explicit
+provisioning step is required. The path is resolved relative to the module's
+own location rather than the working directory:</p>
+
+<pre><code>DB_PATH = Path(__file__).parent / "tasks.db"</code></pre>
+
+<p>This detail is not cosmetic. A relative path such as <code>"tasks.db"</code>
+resolves against whatever directory the process was launched from, meaning the
+application would silently create and seed a <i>different</i> empty database
+when started from elsewhere — indistinguishable, to a user, from total data
+loss. Section 11 documents this exact fault occurring in generated code.</p>
+
+<pre class="term"><code><span class="dim">$ for i in 1 2 3; do python -c "import db; db.init_db()"; done</span>
+<span class="cmd">$ sqlite3 tasks.db "SELECT * FROM tasks"</span>
+1|Learn FastAPI|0
+2|Build CRUD API|0
+3|Publish to GitHub|0
+<span class="ok">✓ three launches, three rows — seed did not repeat</span></code></pre>
+
+<h3>5.2 &nbsp;Stage 1 — Read operations</h3>
+
+<p>Both read endpoints were repointed at the database. The single-task lookup
+passes its identifier as a bound parameter.</p>
+
+<pre><code>SELECT id, title, done FROM tasks ORDER BY id
+SELECT id, title, done FROM tasks WHERE id = ?</code></pre>
+
+<p>An explicit <code>ORDER BY</code> was added. Without one, SQLite returns rows
+in whatever order is convenient, which typically resembles insertion order
+until deletions create reusable space — at which point the ordering changes
+with no corresponding code change to explain it.</p>
+
+<h3>5.3 &nbsp;Stage 2 — Creation</h3>
+
+<p>The application no longer computes identifiers. Where the in-memory version
+calculated <code>max(id) + 1</code>, the database now assigns the key and the
+application reads it back from the cursor.</p>
+
+<pre class="term"><code><span class="cmd">$ curl -i -X POST localhost:8000/tasks -d '{"title":"Buy milk"}'</span>
+HTTP/1.1 <span class="ok">201 Created</span>
+{"id":4,"title":"Buy milk","done":false}
+
+<span class="dim"># server stopped and restarted</span>
+<span class="cmd">$ curl -s localhost:8000/tasks</span>
+[... ,{"id":4,"title":"Buy milk","done":false}]
+<span class="ok">✓ first data in this project's history to survive a restart</span></code></pre>
+
+<h3>5.4 &nbsp;Stage 3 — Update and deletion</h3>
+
+<p>Deletion distinguishes a successful removal from an unknown identifier using
+the cursor's affected-row count, avoiding a preliminary existence query:</p>
+
+<pre><code>cursor = connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+return cursor.rowcount > 0        # False → 404</code></pre>
+
+<p>The complete lifecycle was exercised with a restart inserted mid-sequence to
+confirm that intermediate state was durable, not merely cached.</p>
+
+<table class="data">
+  <tr><th style="width:44%">Operation</th><th style="width:18%">Expected</th><th style="width:18%">Observed</th><th>Result</th></tr>
+  <tr><td><code>POST /tasks</code></td><td>201</td><td>201</td><td><span class="checkmark">Pass</span></td></tr>
+  <tr><td><code>PUT /tasks/6</code> — mark complete</td><td>200</td><td>200</td><td><span class="checkmark">Pass</span></td></tr>
+  <tr><td><i>restart, then</i> <code>GET /tasks/6</code></td><td><code>done: true</code></td><td><code>done: true</code></td><td><span class="checkmark">Pass</span></td></tr>
+  <tr><td><code>DELETE /tasks/6</code></td><td>204</td><td>204</td><td><span class="checkmark">Pass</span></td></tr>
+  <tr><td><code>DELETE /tasks/6</code> — repeated</td><td>404</td><td>404</td><td><span class="checkmark">Pass</span></td></tr>
+  <tr><td><code>PUT /tasks/999</code></td><td>404</td><td>404</td><td><span class="checkmark">Pass</span></td></tr>
+  <tr><td><code>PUT</code> with empty body</td><td>400</td><td>400</td><td><span class="checkmark">Pass</span></td></tr>
+</table>
+</section>
+
+<!-- ============ 6 ============ -->
+<section class="break">
+<h2>6 &nbsp;Query safety</h2>
+
+<p>Every value originating in an HTTP request is transmitted to SQLite as a
+bound parameter, separately from the statement text:</p>
+
+<pre><code>connection.execute(
+    "SELECT id, title, done FROM tasks WHERE id = ?",
+    (task_id,),
+)</code></pre>
+
+<p>The driver sends the statement and the value over separate channels. The
+value is never parsed as SQL, so its contents cannot alter the meaning of the
+query.</p>
+
+<p>The alternative — assembling the statement through string formatting — would
+allow request content to be interpreted as commands. A request supplying
+<code>1; DROP TABLE tasks</code> would, under that approach, be read as two
+statements rather than one identifier. Parameter binding makes the attack
+structurally impossible rather than merely filtered.</p>
+
+<p>One query composes its text conditionally: the filtered listing in
+Section 10 appends <code>WHERE</code> clauses depending on which query
+parameters were supplied. Only the fixed clause fragments are assembled;
+the user-supplied values remain bound parameters throughout. The
+<code>sort</code> parameter selects between two literal strings written in the
+source and is additionally constrained by the framework to an enumerated set,
+so no request content ever reaches the statement text.</p>
+
+<div class="note">
+  <span class="lbl">Verification</span>
+  Every call site was reviewed. The project contains no instance of an
+  f-string, concatenation, or <code>%</code>-formatting used to insert a value
+  into SQL.
+</div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section>
+<h2>7 &nbsp;Verification and testing</h2>
+
+<h3>7.1 &nbsp;Contract preservation</h3>
+
+<p>The endpoint checks written against the in-memory implementation were
+retained without modification and executed against the database
+implementation. They run against a temporary database so that execution never
+affects working data.</p>
+
+<pre class="term"><code><span class="cmd">$ python smoke_test.py</span>
+Seeding
+  <span class="ok">ok</span>  GET /tasks -> 200
+  <span class="ok">ok</span>  seeds exactly three tasks
+Read
+  <span class="ok">ok</span>  GET /tasks/1 -> 200
+  <span class="ok">ok</span>  GET /tasks/999 -> 404
+  <span class="ok">ok</span>  404 body has an error key
+Create
+  <span class="ok">ok</span>  POST /tasks -> 201
+  <span class="ok">ok</span>  database assigned an id
+  <span class="ok">ok</span>  POST with empty title -> 400
+Update
+  <span class="ok">ok</span>  PUT -> 200
+  <span class="ok">ok</span>  title was left alone
+  <span class="ok">ok</span>  PUT with empty body -> 400
+Delete
+  <span class="ok">ok</span>  DELETE -> 204
+  <span class="ok">ok</span>  DELETE unknown id -> 404
+Persistence
+  <span class="ok">ok</span>  seed did not run twice
+
+<span class="ok">All 20 checks passed.</span></code></pre>
+
+<div class="key">
+  <span class="lbl">Why this is the central evidence</span>
+  These assertions were authored against an implementation that stored tasks in
+  a Python list. They pass unaltered against one that stores tasks on disk.
+  A test suite describes what an API promises; the promises did not change,
+  because where data is kept is not part of the contract.
+</div>
+
+<h3>7.2 &nbsp;Installation from a clean clone</h3>
+
+<p>The published repository was cloned into an empty directory and started with
+the single documented command. No manual database step was performed.</p>
+
+<pre class="term"><code><span class="cmd">$ git clone https://github.com/Ahsa6117/fastapi-task-api.git</span>
+<span class="cmd">$ ls</span>  <span class="dim"># no tasks.db present — it is deliberately not committed</span>
+ai-version  db.py  docs  images  main.py  README.md  requirements.txt  smoke_test.py
+
+<span class="cmd">$ fastapi dev main.py</span>
+<span class="cmd">$ curl -s localhost:8005/tasks</span>
+[{"id":1,"title":"Learn FastAPI","done":false},
+ {"id":2,"title":"Build CRUD API","done":false},
+ {"id":3,"title":"Publish to GitHub","done":false}]
+<span class="ok">✓ database file, schema and seed data all created automatically</span>
+<span class="ok">✓ 20/20 checks also pass from the fresh clone</span></code></pre>
+
+<h3>7.3 &nbsp;Exclusion of the database from version control</h3>
+
+<p><code>tasks.db</code> is listed in <code>.gitignore</code> and is not
+tracked. Three reasons support this:</p>
+
+<ul>
+  <li>The application regenerates it automatically, so committing it conveys no
+      information a clone cannot reproduce.</li>
+  <li>Committing it would distribute local test data as though it were part of
+      the project.</li>
+  <li>A binary file produces a wholly new object on every write, inflating
+      repository size and yielding unreadable diffs.</li>
+</ul>
+
+<p>The consequence is that the repository alone cannot evidence persistence.
+The screenshot in Section 8 exists to close that gap.</p>
+</section>
+
+<!-- ============ 8 ============ -->
+<section class="break">
+<h2>8 &nbsp;Direct database inspection</h2>
+
+<p>The database was opened in DB Browser for SQLite while the API server was
+running, and the following statements were executed against the file from
+outside the application:</p>
+
+<pre><code>SELECT * FROM tasks;                 -- list every task
+SELECT * FROM tasks WHERE done = 1;  -- only completed tasks
+SELECT COUNT(*) FROM tasks;          -- how many tasks are there?
+UPDATE tasks SET done = 1 WHERE id = 2;
+DELETE FROM tasks WHERE done = 1;    -- delete all completed tasks</code></pre>
+
+<table class="data">
+  <tr><th style="width:52%">Statement</th><th>Result</th></tr>
+  <tr><td><code>SELECT * FROM tasks;</code></td><td>5 rows — 3 seeded, 2 created through the API</td></tr>
+  <tr><td><code>SELECT * FROM tasks WHERE done = 1;</code></td><td>0 rows initially</td></tr>
+  <tr><td><code>SELECT COUNT(*) FROM tasks;</code></td><td><code>5</code></td></tr>
+  <tr><td><code>UPDATE tasks SET done = 1 WHERE id = 2;</code></td><td>1 row modified</td></tr>
+  <tr><td><code>DELETE FROM tasks WHERE done = 1;</code></td><td>1 row removed</td></tr>
+</table>
+
+<h3>8.1 &nbsp;Single source of truth</h3>
+
+<p>Immediately after the <code>UPDATE</code>, and with no restart, the running
+server returned:</p>
+
+<pre class="term"><code><span class="cmd">$ curl -s localhost:8000/tasks/2</span>
+{"id":2,"title":"Build CRUD API","done":<span class="ok">true</span>}</code></pre>
+
+<p>The application holds no copy of the data to reconcile. It queries the file
+on every request, and the SQL client wrote to that same file. There is no
+synchronisation step because there is nothing to synchronise. This is a
+structural difference from the predecessor: when the list lived inside the
+process, no external tool could observe or alter it.</p>
+
+<figure>
+  <img src="../images/db-browser.png" alt="tasks.db open in DB Browser for SQLite">
+  <figcaption><b>Figure 1.</b> <code>tasks.db</code> in DB Browser for SQLite.
+  Rows 4 and 5 were created through <code>POST /tasks</code> and remain present
+  after the server was restarted. Note that <code>done</code> is stored as
+  <code>1</code>/<code>0</code>, while the API returns <code>true</code>/<code>false</code>
+  — the storage layer performing the translation described in Section 4.1.</figcaption>
+</figure>
+
+<div class="note">
+  <span class="lbl">Operational note</span>
+  DB Browser holds modifications in an open transaction. Changes are not
+  visible to the API — and the file remains write-locked — until
+  <b>Write Changes</b> is invoked. An apparent failure to observe a hand-made
+  edit is usually an uncommitted transaction rather than an application fault.
+</div>
+
+<div class="note">
+  <span class="lbl">On the omitted WHERE clause</span>
+  <code>UPDATE tasks SET done = 1;</code> without a <code>WHERE</code> clause
+  modifies every row, and <code>DELETE FROM tasks;</code> empties the table.
+  Both are valid SQL and neither prompts for confirmation. This is the
+  motivation for the parameterised, id-scoped statements used throughout the
+  application.
+</div>
+</section>
+
+<!-- ============ 9 ============ -->
+<section>
+<h2>9 &nbsp;API surface</h2>
+
+<p>The endpoints below are unchanged from the predecessor assignment, with the
+exception of <code>GET /stats</code> and the query parameters described in
+Section 10, which are additions rather than modifications.</p>
+
+<table class="data">
+  <tr><th style="width:12%">Method</th><th style="width:28%">Path</th><th style="width:32%">Description</th><th>Success</th></tr>
+  <tr><td>GET</td><td><code>/</code></td><td>Describe the API</td><td>200</td></tr>
+  <tr><td>GET</td><td><code>/health</code></td><td>Service health</td><td>200</td></tr>
+  <tr><td>GET</td><td><code>/tasks</code></td><td>List tasks</td><td>200</td></tr>
+  <tr><td>GET</td><td><code>/tasks/{task_id}</code></td><td>Retrieve one task</td><td>200</td></tr>
+  <tr><td>GET</td><td><code>/stats</code></td><td>Aggregate counts</td><td>200</td></tr>
+  <tr><td>POST</td><td><code>/tasks</code></td><td>Create a task</td><td>201</td></tr>
+  <tr><td>PUT</td><td><code>/tasks/{task_id}</code></td><td>Update a task</td><td>200</td></tr>
+  <tr><td>DELETE</td><td><code>/tasks/{task_id}</code></td><td>Delete a task</td><td>204</td></tr>
+</table>
+
+<table class="data">
+  <tr><th style="width:14%">Status</th><th style="width:34%">Meaning</th><th>Condition</th></tr>
+  <tr><td>200</td><td>OK</td><td>Successful read or update</td></tr>
+  <tr><td>201</td><td>Created</td><td>Task inserted</td></tr>
+  <tr><td>204</td><td>No Content</td><td>Task deleted; empty body</td></tr>
+  <tr><td>400</td><td>Bad Request</td><td>Missing, empty, or unusable body</td></tr>
+  <tr><td>404</td><td>Not Found</td><td>No task with the given identifier</td></tr>
+</table>
+
+<p>Errors carry a consistent JSON body of the form
+<code>{"error": "&lt;message&gt;"}</code>. FastAPI's default validation
+response — status 422 with a <code>detail</code> key — is overridden by an
+exception handler so that malformed bodies return 400 in the shape the
+predecessor established. Section 11 records what happens when this requirement
+is left unstated.</p>
+
+<figure>
+  <img src="../images/swagger-sqlite.png" alt="Swagger UI showing the Task API endpoints">
+  <figcaption><b>Figure 2.</b> Generated OpenAPI documentation at
+  <code>/docs</code>, served by the SQLite-backed application. The endpoint set
+  is that of the predecessor assignment, with <code>/stats</code> added.</figcaption>
+</figure>
+</section>
+
+<!-- ============ 10 ============ -->
+<section class="break">
+<h2>10 &nbsp;Extensions beyond scope</h2>
+
+<p>The following were implemented in addition to the required work. Each moves
+computation from application code into the database.</p>
+
+<table class="data">
+  <tr><th style="width:34%">Feature</th><th style="width:30%">Interface</th><th>Implementation</th></tr>
+  <tr><td>Text search</td><td><code>/tasks?search=milk</code></td><td><code>WHERE title LIKE ?</code></td></tr>
+  <tr><td>Status filter</td><td><code>/tasks?done=true</code></td><td><code>WHERE done = ?</code></td></tr>
+  <tr><td>Alphabetical ordering</td><td><code>/tasks?sort=title</code></td><td><code>ORDER BY title COLLATE NOCASE</code></td></tr>
+  <tr><td>Aggregate statistics</td><td><code>/stats</code></td><td><code>COUNT(*)</code>, <code>SUM(done)</code></td></tr>
+  <tr><td>Search index</td><td>&mdash;</td><td><code>CREATE INDEX ... ON tasks (title)</code></td></tr>
+  <tr><td>Atomic initialisation</td><td>&mdash;</td><td>Single transaction (Section 4.3)</td></tr>
+  <tr><td>Contract test suite</td><td><code>smoke_test.py</code></td><td>20 assertions (Section 7.1)</td></tr>
+</table>
+
+<h3>10.1 &nbsp;On indexes</h3>
+
+<p>An index is an auxiliary structure the database maintains alongside a table,
+allowing rows matching a condition to be located without examining every row.
+The index on <code>title</code> serves the search and ordering features above.
+The cost is additional work on every write and a modest increase in file size;
+the benefit is that read performance does not degrade linearly as the table
+grows. At the present scale the difference is unmeasurable — the index is
+present because the access pattern justifies it, not because the current data
+volume demands it.</p>
+
+<h3>10.2 &nbsp;Filtering in the database</h3>
+
+<p>Each filter is expressed as a SQL clause rather than a Python loop over a
+full result set. The distinction matters at scale: filtering in the application
+requires transferring every row out of the database before discarding most of
+them, whereas filtering in the database transfers only the rows that matched.</p>
+</section>
+
+<!-- ============ 11 ============ -->
+<section>
+<h2>11 &nbsp;AI-assisted comparison</h2>
+
+<p>As a final exercise, an AI assistant was asked to perform the same migration
+from a written specification. Its output was generated into an isolated
+directory, executed, and reviewed against the hand-built implementation. No
+generated code was incorporated into the submission.</p>
+
+<div class="note">
+  <span class="lbl">Methodological disclosure</span>
+  The generated version and the hand-built version originate from the same
+  model. This weakens the exercise relative to using an independent assistant.
+  It is mitigated by the generation being performed from the specification
+  alone, and by every finding below arising from executing the result rather
+  than reading it.
+</div>
+
+<h3>11.1 &nbsp;Outcome</h3>
+
+<p>The generated application ran on the first attempt. It created its database,
+established the schema, seeded exactly three tasks, and did not duplicate them
+across restarts. Data survived process termination. The required capability was
+therefore delivered; the defects lay entirely in behaviour the specification
+had not constrained.</p>
+
+<h3>11.2 &nbsp;Where the generated code was superior</h3>
+
+<p>It employed SQLite's <code>RETURNING</code> clause, causing the insert itself
+to yield the stored row:</p>
+
+<pre><code>INSERT INTO tasks (title, done) VALUES (?, ?) RETURNING id, title, done</code></pre>
+
+<p>The hand-built version retrieves <code>cursor.lastrowid</code> and
+reconstructs the response from the values it submitted. That approach
+<i>assumes</i> the stored row matches the input; should a default, trigger, or
+type conversion alter a value during insertion, the response would describe a
+row that does not exist. <code>RETURNING</code> reports what was actually
+written. Applied to <code>UPDATE</code>, it also collapses a
+<code>SELECT</code>-then-<code>UPDATE</code> existence check into one statement,
+eliminating a window in which the row could be removed between the two.</p>
+
+<h3>11.3 &nbsp;Defects identified</h3>
+
+<table class="data">
+  <tr><th style="width:40%">Defect</th><th style="width:32%">Observed behaviour</th><th>Severity</th></tr>
+  <tr><td>Relative database path</td><td>Launching from another directory created a second empty database</td><td>High</td></tr>
+  <tr><td>Altered error body</td><td><code>{"detail": ...}</code> rather than <code>{"error": ...}</code></td><td>High</td></tr>
+  <tr><td>Incorrect validation status</td><td>422 returned where 400 was required</td><td>Medium</td></tr>
+  <tr><td><code>PUT</code> semantics changed</td><td>Partial update rejected with 422</td><td>Medium</td></tr>
+  <tr><td>Whitespace title accepted</td><td><code>{"title":"   "}</code> returned 201</td><td>Medium</td></tr>
+  <tr><td>Shared connection</td><td>One connection across the thread pool</td><td>Low</td></tr>
+  <tr><td>Unordered results</td><td>No <code>ORDER BY</code> clause</td><td>Low</td></tr>
+</table>
+
+<p>The first is the most serious, because it is silent. The application starts
+normally, reports no error, and presents an empty task list — a state
+indistinguishable, from the user's perspective, from the loss of all their
+data.</p>
+
+<p>The second is the most instructive. The status code is correct; only the
+response body differs. A test asserting on status alone would pass, and every
+client reading the <code>error</code> field would fail.</p>
+
+<h3>11.4 &nbsp;Analysis</h3>
+
+<p>Every defect traces to an omission in the specification rather than
+carelessness in generation. The prompt described the <i>schema</i> precisely and
+the <i>behaviour</i> in summary — "keep the same endpoints", "same behaviour".
+The schema was reproduced exactly. The behaviour was inferred.</p>
+
+<p>An instruction to preserve existing behaviour conveys nothing to a system
+that cannot observe the existing behaviour. Each unstated decision was
+nonetheless made; it was simply made by the model rather than the author.</p>
+
+<h3>11.5 &nbsp;Second iteration</h3>
+
+<p>The specification was revised to state all seven behaviours explicitly and
+regeneration was performed. Every discrepancy was resolved. The revised output
+passes all 20 assertions in <code>smoke_test.py</code> without modification —
+a suite the first version could not even be executed against, as it lacked the
+separate storage module the tests attach to. It also retained the
+<code>RETURNING</code> improvement, making the second generation superior to the
+hand-built implementation rather than equivalent to it.</p>
+
+<div class="key">
+  <span class="lbl">Conclusion</span>
+  The quality of the output was governed by the precision of the specification,
+  not by the capability of the generator. Reviewing that output required having
+  already made each of the decisions by hand — the defects were identified by
+  comparison against a working implementation that was understood, not against
+  the specification that produced them.
+</div>
+</section>
+
+<!-- ============ 12 ============ -->
+<section class="break">
+<h2>12 &nbsp;Requirements traceability</h2>
+
+<table class="data">
+  <tr><th style="width:48%">Requirement</th><th style="width:38%">Evidence</th><th>Status</th></tr>
+  <tr><td>Endpoints unchanged from A1</td><td>20 contract assertions, §7.1</td><td><span class="checkmark">Met</span></td></tr>
+  <tr><td>Tasks stored in SQLite, not memory</td><td><code>db.py</code>; §5</td><td><span class="checkmark">Met</span></td></tr>
+  <tr><td>Data survives restart</td><td>§5.3 via API; Figure 1 via file</td><td><span class="checkmark">Met</span></td></tr>
+  <tr><td>Database file created automatically</td><td>Clean clone test, §7.2</td><td><span class="checkmark">Met</span></td></tr>
+  <tr><td>Table created automatically</td><td>Clean clone test, §7.2</td><td><span class="checkmark">Met</span></td></tr>
+  <tr><td>Seed runs only on first launch</td><td>Three restarts, §5.1</td><td><span class="checkmark">Met</span></td></tr>
+  <tr><td>Parameterized queries throughout</td><td>Call-site review, §6</td><td><span class="checkmark">Met</span></td></tr>
+  <tr><td>Correct status codes with JSON errors</td><td>§5.4, §9</td><td><span class="checkmark">Met</span></td></tr>
+  <tr><td>Public repository, ≥6 commits</td><td>10 commits, Appendix B</td><td><span class="checkmark">Met</span></td></tr>
+  <tr><td>README and database screenshot</td><td>Repository root; Figure 1</td><td><span class="checkmark">Met</span></td></tr>
+</table>
+
+<h3>12.1 &nbsp;Optional work completed</h3>
+
+<table class="data">
+  <tr><th style="width:48%">Item</th><th style="width:38%">Evidence</th><th>Status</th></tr>
+  <tr><td>Search, filter, sort, statistics</td><td>§10</td><td><span class="checkmark">Done</span></td></tr>
+  <tr><td>Index with rationale</td><td>§10.1</td><td><span class="checkmark">Done</span></td></tr>
+  <tr><td>Transaction with rationale</td><td>§4.3</td><td><span class="checkmark">Done</span></td></tr>
+  <tr><td>A1 tests passing against SQLite</td><td>§7.1</td><td><span class="checkmark">Done</span></td></tr>
+  <tr><td>AI comparison exercise</td><td>§11</td><td><span class="checkmark">Done</span></td></tr>
+</table>
+</section>
+
+<!-- ============ 13 ============ -->
+<section>
+<h2>13 &nbsp;Discussion</h2>
+
+<h3>13.1 &nbsp;The migration was smaller than anticipated</h3>
+
+<p>Moving from memory to disk changed one module and eight lines across the
+route handlers. The reason is that the routes never held the data directly;
+they held a reference to something that did. Substituting what sits behind that
+reference is a contained change. Had the endpoints manipulated the list
+inline — searching it, appending to it, computing identifiers from it — the same
+migration would have required rewriting all five of them.</p>
+
+<h3>13.2 &nbsp;Interfaces as the unit of stability</h3>
+
+<p>The clearest demonstration in this project is that a test suite written for
+one storage mechanism validated a completely different one. That outcome was
+not incidental; it follows from the tests asserting on the API's promises
+rather than its internals. Tests coupled to implementation detail would have
+required rewriting, and would have provided no evidence of equivalence.</p>
+
+<h3>13.3 &nbsp;Correct status codes are insufficient</h3>
+
+<p>The most instructive defect in Section 11 was a 404 carrying the wrong body
+shape. The status was right, so superficial testing passed. Compatibility is
+determined by the entire response, not by its first line.</p>
+
+<h3>13.4 &nbsp;Specification is the constraining factor</h3>
+
+<p>The AI comparison produced a measurable result: seven behavioural
+discrepancies, each traceable to an unstated requirement, and all seven removed
+by stating them. The generator was never the limitation. Identifying the
+discrepancies at all depended on having built the system by hand first — the
+comparison was made against an implementation that was understood, not against
+the document that had produced the alternative.</p>
+</section>
+
+<!-- ============ APPENDICES ============ -->
+<section class="break">
+<h2>Appendix A &nbsp;Repository structure</h2>
+
+<pre><code>fastapi-task-api/
+├── main.py                    FastAPI application and route handlers    (212 lines)
+├── db.py                      Storage layer — all SQL resides here      (186 lines)
+├── smoke_test.py              Contract test suite, 20 assertions        (109 lines)
+├── requirements.txt           Dependencies
+├── README.md                  Project documentation
+├── .gitignore                 Excludes tasks.db, .venv, __pycache__
+├── docs/
+│   ├── sql-exploration.md     Direct SQL session (Section 8)
+│   ├── ai-prompt.md           Specifications, both iterations
+│   ├── ai-vs-me.md            Comparison analysis (Section 11)
+│   └── report.html            Source of this document
+├── images/
+│   ├── db-browser.png         Figure 1
+│   └── swagger-sqlite.png     Figure 2
+├── ai-version/                Generated code, isolated — not submitted
+│   ├── main.py                First iteration
+│   └── v2/                    Second iteration
+└── tasks.db                   Database — created at runtime, not committed</code></pre>
+
+<h2>Appendix B &nbsp;Commit history</h2>
+
+<table class="data">
+  <tr><th style="width:16%">Commit</th><th style="width:16%">Date</th><th>Subject</th></tr>
+  <tr><td><code>d375de1</code></td><td>2026-08-07</td><td>Stage 0: create SQLite database</td></tr>
+  <tr><td><code>3f3e34d</code></td><td>2026-08-07</td><td>Stage 1: database read endpoints</td></tr>
+  <tr><td><code>17678ac</code></td><td>2026-08-08</td><td>Stage 2: insert into database</td></tr>
+  <tr><td><code>a0e8b01</code></td><td>2026-08-08</td><td>Stage 3: update and delete with SQL</td></tr>
+  <tr><td><code>b5f3b93</code></td><td>2026-08-08</td><td>Stage 4: explored SQLite</td></tr>
+  <tr><td><code>f365473</code></td><td>2026-08-08</td><td>Extras: search, filter, sort, stats, index and seed transaction</td></tr>
+  <tr><td><code>cccd80b</code></td><td>2026-08-08</td><td>Stretch: prove the API contract did not change</td></tr>
+  <tr><td><code>5a8ba22</code></td><td>2026-08-08</td><td>Stage 5: database documentation</td></tr>
+  <tr><td><code>d059051</code></td><td>2026-08-08</td><td>Stage 6: AI vs me (AI code stays in its own folder)</td></tr>
+  <tr><td><code>699532d</code></td><td>2026-08-08</td><td>Add DB Browser screenshot of tasks.db</td></tr>
+</table>
+
+<h2>Appendix C &nbsp;Operating instructions</h2>
+
+<pre class="term"><code><span class="dim"># obtain and prepare</span>
+<span class="cmd">git clone https://github.com/Ahsa6117/fastapi-task-api.git</span>
+<span class="cmd">cd fastapi-task-api</span>
+<span class="cmd">python -m venv .venv</span>
+<span class="cmd">.venv\Scripts\Activate.ps1</span>          <span class="dim"># Windows</span>
+<span class="cmd">python -m pip install -r requirements.txt</span>
+
+<span class="dim"># run — the database is created on first launch</span>
+<span class="cmd">fastapi dev main.py</span>
+
+<span class="dim"># verify</span>
+<span class="cmd">curl -s http://127.0.0.1:8000/tasks</span>
+<span class="cmd">python smoke_test.py</span></code></pre>
+
+<p class="small muted">Interactive documentation is served at
+<code>http://127.0.0.1:8000/docs</code>. Deleting <code>tasks.db</code> and
+restarting restores the database to its initial seeded state.</p>
+
+<p class="small muted" style="margin-top:8mm; border-top:1px solid #d4dae0; padding-top:3mm;">
+FlyRank Internship &middot; Backend Development Track &middot; Week 3 &middot; Assignment A2 &nbsp;|&nbsp;
+Ahsan Choudhry &middot; 8 August 2026 &nbsp;|&nbsp;
+github.com/Ahsa6117/fastapi-task-api</p>
+</section>
+
+</body>
+</html>
