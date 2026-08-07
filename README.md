@@ -161,9 +161,31 @@ The full Stage 4 session, including `SELECT`, `COUNT(*)`, and `DELETE`, is in [d
 
 ## Database screenshot
 
-`tasks.db` open in DB Browser for SQLite, showing the same rows the API serves:
+`tasks.db` open in DB Browser for SQLite:
 
 ![tasks.db in DB Browser for SQLite](images/db-browser.png)
+
+These are the same five rows the API was serving at that moment:
+
+```bash
+curl -s http://127.0.0.1:8000/tasks
+```
+
+```json
+[
+  { "id": 1, "title": "Learn FastAPI",     "done": true  },
+  { "id": 2, "title": "Build CRUD API",    "done": false },
+  { "id": 3, "title": "Publish to GitHub", "done": false },
+  { "id": 4, "title": "Buy milk",          "done": true  },
+  { "id": 5, "title": "Write README",      "done": false }
+]
+```
+
+Two things to notice. "Buy milk" and "Write README" were created through
+`POST /tasks` and are still in the file after the server was restarted — that is
+persistence, shown from both sides. And `done` is stored as `1`/`0` in the
+table but returned as `true`/`false` in JSON, which is the storage layer doing
+its job: the database's representation stays in the database.
 
 ## Parameterized queries
 
