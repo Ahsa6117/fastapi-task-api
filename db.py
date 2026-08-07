@@ -87,3 +87,19 @@ def get_task(task_id: int) -> dict | None:
         ).fetchone()
 
     return row_to_task(row) if row else None
+
+
+# -------------------------
+# Create
+# -------------------------
+
+def create_task(title: str) -> dict:
+    """Insert one task and return it with the id the database assigned."""
+    with get_connection() as connection:
+        cursor = connection.execute(
+            "INSERT INTO tasks (title, done) VALUES (?, ?)",
+            (title, 0),
+        )
+        new_id = cursor.lastrowid
+
+    return {"id": new_id, "title": title, "done": False}

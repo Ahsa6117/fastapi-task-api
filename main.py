@@ -127,20 +127,7 @@ def create_task(task_data: TaskCreate):
             },
         )
 
-    next_id = max(
-        (task["id"] for task in tasks),
-        default=0,
-    ) + 1
-
-    new_task = {
-        "id": next_id,
-        "title": title,
-        "done": False,
-    }
-
-    tasks.append(new_task)
-
-    return new_task
+    return db.create_task(title)
 
 
 # -------------------------
