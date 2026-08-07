@@ -140,7 +140,7 @@ def create_task(task_data: TaskCreate):
     summary="Update a task",
 )
 def update_task(task_id: int, task_data: TaskUpdate):
-    task = find_task(task_id)
+    task = db.get_task(task_id)
 
     if task is None:
         return JSONResponse(
@@ -168,7 +168,7 @@ def update_task(task_id: int, task_data: TaskUpdate):
     if task_data.done is not None:
         task["done"] = task_data.done
 
-    return task
+    return db.update_task(task_id, task["title"], task["done"])
 
 
 # -------------------------
@@ -182,15 +182,11 @@ def update_task(task_id: int, task_data: TaskUpdate):
     summary="Delete a task",
 )
 def delete_task(task_id: int):
-    task = find_task(task_id)
-
-    if task is None:
+    if not db.delete_task(task_id):
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"error": f"Task {task_id} not found"},
         )
-
-    tasks.remove(task)
 
     return Response(
         status_code=status.HTTP_204_NO_CONTENT
