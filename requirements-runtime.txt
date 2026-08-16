@@ -1,0 +1,12 @@
+# What the *server* needs, and nothing else. Used only by the Dockerfile.
+#
+# requirements.txt (the dev one) installs fastapi[standard], which pulls in
+# the whole development kit: the `fastapi` CLI, rich, typer, httpx, jinja2,
+# email-validator, python-multipart. Useful at a terminal, dead weight in a
+# container whose only job is to run uvicorn.
+#
+# Keep the two in sync when adding a dependency the app imports at runtime.
+fastapi
+uvicorn[standard]
+psycopg[binary]
+python-dotenv

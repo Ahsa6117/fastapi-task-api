@@ -375,7 +375,9 @@ main.py            FastAPI app and the endpoints — no SQL
 db.py              the storage layer: every SQL query lives here
 smoke_test.py      the Assignment 1 endpoint checks
 compose.yaml       the whole stack: api + db, one command
-Dockerfile         how the app's own image is built
+Dockerfile         two-stage build for the app's image
+requirements.txt   dependencies for developing (includes the fastapi CLI)
+requirements-runtime.txt   the shorter list the container actually needs
 .env.example       the config template (.env itself is git-ignored)
 .dockerignore      keeps .env and friends out of the image
 scripts/           one-time Docker setup helper for WSL
@@ -385,6 +387,49 @@ images/            screenshots
 ```
 
 The endpoints in `main.py` never write SQL themselves. They call functions in `db.py`, which is what made this migration a change to one file rather than a rewrite — for the second time.
+
+## The multi-stage Dockerfile, and the measurement that went wrong first
+
+The app image is built in two stages: a **builder** that installs the
+dependencies into a virtualenv, and a runtime stage that starts clean and copies
+only that finished virtualenv across. Docker keeps only the final stage, so
+everything used to *build* the image is discarded.
+
+| | Uncompressed | Compressed |
+| --- | --- | --- |
+| Before — single stage, `fastapi[standard]` | **318 MB** | 74.3 MB |
+| Naive multi-stage, same dependencies | 322 MB | 74.8 MB |
+| After — multi-stage, runtime deps only, no pip | **259 MB** | 61.1 MB |
+
+**The middle row is the interesting one: multi-stage on its own made the image
+slightly bigger.** I expected a win and measured a loss. Two reasons, both
+obvious in hindsight:
+
+1. **There was no build toolchain to throw away.** Multi-stage pays off when a
+   package compiles from source and drags in gcc and headers. Every dependency
+   here — including `psycopg[binary]`, whose whole point is the name — ships as
+   a prebuilt wheel. The builder stage had nothing heavy to leave behind.
+2. **`python -m venv` installs its own pip**, so pip shipped anyway, just at a
+   different path.
+
+What actually shrank it was deciding what the *running server* needs:
+
+- **`fastapi[standard]` → plain `fastapi` + `uvicorn[standard]`.** The
+  `[standard]` extra pulls the whole development kit — the `fastapi` CLI, rich,
+  typer, httpx, jinja2, email-validator, python-multipart. Useful at a terminal,
+  dead weight in a container whose only job is `uvicorn main:app`. That is what
+  `requirements-runtime.txt` is: `requirements.txt` stays as-is for development,
+  because `smoke_test.py` genuinely needs httpx for `TestClient`.
+- **Deleting pip, setuptools and wheel from the venv** before it is copied. A
+  running app never installs anything.
+
+Verified after slimming: `docker compose up -d --build` still comes up in 3
+seconds, all 24 smoke-test checks pass, persistence still holds, and `/app`
+contains exactly `main.py` and `db.py` — no `.env`.
+
+The lesson is not "multi-stage builds don't work." It is that **the size was
+never in the build tooling, it was in the dependency list**, and I would have
+kept believing otherwise if I had shipped the change without measuring it.
 
 ## Notes
 
