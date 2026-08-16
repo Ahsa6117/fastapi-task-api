@@ -1,0 +1,14 @@
+# Keep these out of the image. Smaller build context, faster builds, and
+# -- most importantly -- .env never gets baked into an image that could
+# be pushed to a registry.
+.env
+.git
+.venv
+__pycache__
+*.pyc
+tasks.db
+images/
+docs/
+ai-version/
+*.pdf
+*.png

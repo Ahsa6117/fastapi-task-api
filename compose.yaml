@@ -1,0 +1,52 @@
+# One file that describes the whole system, started with one command:
+#
+#   docker compose up
+#
+# Two services: the API (built from the Dockerfile next to this file) and
+# Postgres (the official image, untouched). Compose puts them on a shared
+# private network where each one is reachable by its service name.
+#
+# Every ${VALUE} below is read from .env, which is git-ignored -- so this
+# file is safe to commit and still contains no password.
+
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Host is "db", the service name -- NOT localhost. Inside a
+      # container, localhost means "this container", so localhost:5432
+      # would look for Postgres inside the API container and find nothing.
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    depends_on:
+      db:
+        # Wait for the healthcheck below to pass, not merely for the
+        # container to exist. Postgres takes a few seconds after starting
+        # before it accepts connections.
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Exposed so psql and GUI tools on the host can look inside. The API
+      # does not need this -- it reaches the database over the compose
+      # network, not through the host.
+      - "5432:5432"
+    volumes:
+      # The named volume is what makes the data outlive the container.
+      # Without it, docker compose down would take every task with it.
+      - taskdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  taskdata:
