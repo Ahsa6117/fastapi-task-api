@@ -15,16 +15,26 @@ than handing it to a different assistant.
 
 Both prompts are in [a3-ai-prompt.md](a3-ai-prompt.md).
 
+**How much of this is verified.** Every finding below comes from reading the
+generated code line by line and from parsing all three `compose.yaml` files to
+compare them mechanically. Docker is not yet installed on this machine, so
+neither AI stack has been *run* — the "it works first try" claims are about
+structure, not observed behaviour, and they are marked as such. The runtime
+comparison lands once the stack is up.
+
 ---
 
 ## Round 1 — what came back
 
-The headline result: **v1's stack is structurally correct.** `docker compose up`
-builds and runs, Postgres comes up with a named volume, the app waits on a
-`pg_isready` healthcheck, the table is created, three tasks are seeded once, and
-all five endpoints do CRUD against Postgres with `%s` placeholders throughout.
-The container part of the assignment — the genuinely new part — it got right on
-the first try.
+The headline result: **v1's stack is structurally correct.** The compose file
+declares both services, gives Postgres a named volume, defines a `pg_isready`
+healthcheck and makes `api` wait on `service_healthy`; the app creates the table,
+seeds three tasks only when the count is zero, and does all five CRUD operations
+with `%s` placeholders throughout. The container part of the assignment — the
+genuinely new part — it got right.
+
+(Not yet run — see the caveat above. Structure reviewed and compose parsed;
+runtime behaviour unconfirmed.)
 
 Everything I found is in the parts my prompt described in slogans rather than in
 detail. That is the same lesson as the A2 round, arriving in a new costume.
@@ -157,6 +167,29 @@ Three things survived the rematch, and they are more interesting than the fixes:
 
 - **`DATABASE_URL` is still captured at import time**, so v2 is still not
   testable the way `smoke_test.py` needs.
+
+### One difference where I am not sure I am the right one
+
+Writing checks against my own version turned up a case neither prompt covered.
+For `PUT /tasks/999` with an **empty body** — two things wrong at once — the two
+versions disagree:
+
+| | My version | AI v2 |
+| --- | --- | --- |
+| checks first | does the task exist? | is the body empty? |
+| result | **404** Task not found | **400** At least one of title or done is required |
+
+Mine looks the row up before validating, so "unknown id" wins. v2 validates the
+body before touching the database, so "empty body" wins. Both are defensible —
+404-first says *the thing you addressed does not exist, nothing else matters*;
+400-first says *this request was malformed before I even looked*. v2's order is
+also one fewer database round-trip on a request that was always going to fail.
+
+I kept mine, because it is the order A1 and A2 already had and the contract is
+the thing I have been protecting for three assignments. But I only *discovered*
+this was a decision because writing a test forced me to predict the answer and I
+guessed wrong about my own code. Neither prompt specified it, so the AI was free
+to pick — and it picked the cheaper one.
 
 The pattern across both rounds: the AI's output is exactly as good as the
 specification, the specification is only as good as your memory of your own

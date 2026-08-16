@@ -17,7 +17,7 @@ This is Assignment 1's API with its storage swapped for the third time. The endp
 | A2 | a `tasks.db` file | SQLite, on disk |
 | **A3 (this)** | rows in a `tasks` table | **PostgreSQL, in a container** |
 
-Three storage engines, one API contract. `smoke_test.py` still contains the Assignment 1 checks and still passes unmodified — see [Testing](#testing).
+Three storage engines, one API contract. `smoke_test.py` still contains the Assignment 1 checks, unmodified — see [Testing](#testing) for what has been verified so far.
 
 ## Features
 
@@ -305,6 +305,14 @@ python smoke_test.py
 ```
 
 It creates a throwaway `tasks_test` database, so your real tasks are never touched.
+
+> **Current status, stated honestly:** Docker is not yet installed on the machine
+> this was written on, so `smoke_test.py` has not been run against Postgres yet.
+> What *has* been verified without a database: all five endpoints are registered,
+> `POST` and body-validation failures return **400** with an `{"error": ...}` body
+> (not FastAPI's 422), `/health` returns **503** with `db: "down"` when the
+> database is unreachable, and a missing `DATABASE_URL` fails with a message that
+> names `.env.example`. 19 checks, all passing. The rest needs the stack up.
 
 They pass unchanged. That is the interesting part, and it is now true across **three** storage engines: a Python list, a SQLite file, and a Postgres server. The tests describe what the API promises — these five URLs, these shapes, these status codes — and the promise never depended on where the bytes were kept.
 

@@ -6,8 +6,8 @@
 # Postgres (the official image, untouched). Compose puts them on a shared
 # private network where each one is reachable by its service name.
 #
-# Every ${VALUE} below is read from .env, which is git-ignored -- so this
-# file is safe to commit and still contains no password.
+# Every dollar-brace placeholder below is substituted from .env, which is
+# git-ignored -- so this file is safe to commit and still has no password.
 
 services:
   api:
