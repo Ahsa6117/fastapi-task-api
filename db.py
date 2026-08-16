@@ -1,44 +1,86 @@
-"""SQLite storage layer for the Task API.
+"""PostgreSQL storage layer for the Task API.
 
-The API routes never talk to SQLite directly. They call the helpers in
-this module, so swapping the storage layer never touches the endpoints.
+This is the one module that talks to the database. The API routes in
+main.py call these helpers and never write SQL themselves, so this is the
+only file that changed when storage moved from a Python list (A1) to a
+SQLite file (A2) to a Postgres server (A3). The function names, their
+arguments, and the dicts they return are all identical to the SQLite
+version -- which is why main.py did not need a single edit.
+
+Two things are genuinely new here:
+
+* The connection string comes from the DATABASE_URL environment variable
+  (loaded from .env), never from a password typed into this file.
+* Placeholders are %s instead of ?, because that is what psycopg uses.
+  They do the same job: the value travels beside the SQL, never inside
+  it, so a title like "'; DROP TABLE tasks; --" is stored as text rather
+  than executed as a command.
 """
 
-import sqlite3
-from pathlib import Path
+import os
+import time
 
-# The database is a single file next to this module. Opening a SQLite
-# file that does not exist creates it, so no manual setup is needed.
-DB_PATH = Path(__file__).parent / "tasks.db"
+import psycopg
+from dotenv import load_dotenv
+from psycopg.rows import dict_row
+
+# Read .env into the environment. Values already set in the real
+# environment win, which is how docker compose overrides DATABASE_URL to
+# point at the "db" service instead of localhost.
+load_dotenv()
 
 SEED_TASKS = [
-    ("Learn FastAPI", 0),
-    ("Build CRUD API", 0),
-    ("Publish to GitHub", 0),
+    ("Learn FastAPI", False),
+    ("Build CRUD API", False),
+    ("Publish to GitHub", False),
 ]
 
 
-def get_connection() -> sqlite3.Connection:
+def get_database_url() -> str:
+    """Read the connection string, failing loudly if nobody set it.
+
+    Crashing here with a clear message is much kinder than falling back to
+    some hardcoded default and quietly writing to the wrong database.
+    """
+    url = os.getenv("DATABASE_URL")
+
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Copy .env.example to .env "
+            "(cp .env.example .env) and fill in your password."
+        )
+
+    return url
+
+
+def get_connection() -> psycopg.Connection:
     """Open a connection whose rows behave like dictionaries."""
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
+    return psycopg.connect(get_database_url(), row_factory=dict_row)
 
 
-def create_table(connection: sqlite3.Connection) -> None:
-    """Create the tasks table if it is missing."""
+# -------------------------
+# Startup
+# -------------------------
+
+def create_table(connection: psycopg.Connection) -> None:
+    """Create the tasks table if it is missing.
+
+    `serial` is the Postgres way of saying "the database fills this in and
+    counts up for me" -- the equivalent of SQLite's AUTOINCREMENT. `done`
+    is a real boolean here, not the 0/1 integer SQLite had to fake.
+    """
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS tasks (
-            id    INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT    NOT NULL,
-            done  INTEGER NOT NULL DEFAULT 0
+            id    serial  PRIMARY KEY,
+            title text    NOT NULL,
+            done  boolean NOT NULL DEFAULT false
         )
         """
     )
 
 
-def create_index(connection: sqlite3.Connection) -> None:
+def create_index(connection: psycopg.Connection) -> None:
     """Index the column the search and sort extras query.
 
     An index is a lookup structure the database keeps beside the table so
@@ -49,31 +91,70 @@ def create_index(connection: sqlite3.Connection) -> None:
     )
 
 
-def seed_if_empty(connection: sqlite3.Connection) -> None:
-    """Insert the example tasks only when the table has no rows."""
+def seed_if_empty(connection: psycopg.Connection) -> None:
+    """Insert the example tasks only when the table has no rows.
+
+    This is the first-run rule from A2, unchanged: restarting the app (or
+    the whole stack) must never pile up a second set of example tasks.
+    """
     row = connection.execute("SELECT COUNT(*) AS total FROM tasks").fetchone()
 
     if row["total"] == 0:
-        connection.executemany(
-            "INSERT INTO tasks (title, done) VALUES (?, ?)",
+        connection.cursor().executemany(
+            "INSERT INTO tasks (title, done) VALUES (%s, %s)",
             SEED_TASKS,
         )
 
 
+def wait_for_database(attempts: int = 30, delay: float = 1.0) -> None:
+    """Retry the first connection until Postgres is accepting clients.
+
+    Under docker compose the api container starts the moment the db
+    container starts, but Postgres needs a few seconds after that before
+    it will answer. `depends_on` only waits for the container, not for the
+    database inside it, so the app has to be patient itself.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            with psycopg.connect(get_database_url()):
+                return
+        except psycopg.OperationalError:
+            if attempt == attempts:
+                raise
+            print(f"Waiting for Postgres... ({attempt}/{attempts})")
+            time.sleep(delay)
+
+
 def init_db() -> None:
-    """Create the database file, the table, the index, and the seed data.
+    """Wait for the server, then create the table, index, and seed data.
 
     The `with` block is one transaction: if any statement fails, every
     change in it is rolled back. That keeps startup all-or-nothing, so a
     crash mid-seed can never leave one and a half example tasks behind.
     """
+    wait_for_database()
+
     with get_connection() as connection:
         create_table(connection)
         create_index(connection)
         seed_if_empty(connection)
 
 
-def row_to_task(row: sqlite3.Row) -> dict:
+def ping() -> bool:
+    """Run the cheapest possible query, to prove the database answers.
+
+    SELECT 1 touches no tables; it only asks "are you there?". /health
+    uses it so a failing database shows up as an unhealthy app.
+    """
+    try:
+        with get_connection() as connection:
+            connection.execute("SELECT 1")
+        return True
+    except psycopg.Error:
+        return False
+
+
+def row_to_task(row: dict) -> dict:
     """Turn a database row into the JSON shape the API has always returned."""
     return {
         "id": row["id"],
@@ -97,19 +178,19 @@ def list_tasks(
     values: list = []
 
     if search:
-        conditions.append("title LIKE ?")
+        conditions.append("title ILIKE %s")
         values.append(f"%{search}%")
 
     if done is not None:
-        conditions.append("done = ?")
-        values.append(int(done))
+        conditions.append("done = %s")
+        values.append(done)
 
     if conditions:
         sql += " WHERE " + " AND ".join(conditions)
 
     # `sort` never reaches the SQL as user text: it only picks between two
     # fixed clauses written here, so there is nothing to inject.
-    sql += " ORDER BY title COLLATE NOCASE" if sort == "title" else " ORDER BY id"
+    sql += " ORDER BY lower(title)" if sort == "title" else " ORDER BY id"
 
     with get_connection() as connection:
         rows = connection.execute(sql, values).fetchall()
@@ -123,9 +204,9 @@ def get_stats() -> dict:
         row = connection.execute(
             """
             SELECT
-                COUNT(*)                        AS total,
-                COALESCE(SUM(done), 0)          AS done,
-                COUNT(*) - COALESCE(SUM(done), 0) AS pending
+                COUNT(*)                                    AS total,
+                COUNT(*) FILTER (WHERE done)                AS done,
+                COUNT(*) FILTER (WHERE NOT done)            AS pending
             FROM tasks
             """
         ).fetchone()
@@ -135,9 +216,9 @@ def get_stats() -> dict:
 
 def get_task(task_id: int) -> dict | None:
     with get_connection() as connection:
-        # The ? placeholder keeps the id out of the SQL text itself.
+        # The %s placeholder keeps the id out of the SQL text itself.
         row = connection.execute(
-            "SELECT id, title, done FROM tasks WHERE id = ?",
+            "SELECT id, title, done FROM tasks WHERE id = %s",
             (task_id,),
         ).fetchone()
 
@@ -149,15 +230,18 @@ def get_task(task_id: int) -> dict | None:
 # -------------------------
 
 def create_task(title: str) -> dict:
-    """Insert one task and return it with the id the database assigned."""
-    with get_connection() as connection:
-        cursor = connection.execute(
-            "INSERT INTO tasks (title, done) VALUES (?, ?)",
-            (title, 0),
-        )
-        new_id = cursor.lastrowid
+    """Insert one task and return it with the id the database assigned.
 
-    return {"id": new_id, "title": title, "done": False}
+    RETURNING is a Postgres convenience: the INSERT hands back the row it
+    just wrote, id included, so there is no second SELECT to fetch it.
+    """
+    with get_connection() as connection:
+        row = connection.execute(
+            "INSERT INTO tasks (title, done) VALUES (%s, %s) RETURNING id, title, done",
+            (title, False),
+        ).fetchone()
+
+    return row_to_task(row)
 
 
 # -------------------------
@@ -167,20 +251,26 @@ def create_task(title: str) -> dict:
 def update_task(task_id: int, title: str, done: bool) -> dict:
     """Overwrite one task's title and done flag, then return the new row."""
     with get_connection() as connection:
-        connection.execute(
-            "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
-            (title, int(done), task_id),
-        )
+        row = connection.execute(
+            """
+            UPDATE tasks
+               SET title = %s, done = %s
+             WHERE id = %s
+            RETURNING id, title, done
+            """,
+            (title, done, task_id),
+        ).fetchone()
 
-    return {"id": task_id, "title": title, "done": done}
+    return row_to_task(row)
 
 
 def delete_task(task_id: int) -> bool:
     """Delete one task. Returns False when no row had that id."""
     with get_connection() as connection:
         cursor = connection.execute(
-            "DELETE FROM tasks WHERE id = ?",
+            "DELETE FROM tasks WHERE id = %s",
             (task_id,),
         )
+        deleted = cursor.rowcount
 
-    return cursor.rowcount > 0
+    return deleted > 0
