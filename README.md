@@ -17,7 +17,7 @@ This is Assignment 1's API with its storage swapped for the third time. The endp
 | A2 | a `tasks.db` file | SQLite, on disk |
 | **A3 (this)** | rows in a `tasks` table | **PostgreSQL, in a container** |
 
-Three storage engines, one API contract. `smoke_test.py` still contains the Assignment 1 checks, unmodified — see [Testing](#testing) for what has been verified so far.
+Three storage engines, one API contract. `smoke_test.py` still contains the Assignment 1 checks, unmodified, and all 24 pass against Postgres — see [Testing](#testing).
 
 ## Features
 
@@ -97,10 +97,23 @@ The Stage 0 command, kept here because it is the shortest way to get a real data
 docker run --name taskdb \
   -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=tasks \
   -p 5432:5432 -v taskdata:/var/lib/postgresql/data \
-  -d postgres
+  -d postgres:16
 ```
 
 Reading it: run the official `postgres` image; name the container `taskdb`; set the password and create a database called `tasks`; map the container's port 5432 to yours; mount a named volume so the data outlives the container; `-d` runs it in the background.
+
+> **Pin the version — `postgres` alone will not work.** Written as `-d postgres`,
+> this pulls Postgres 18+, which **moved its data directory**. Mounting a volume
+> at `/var/lib/postgresql/data` now makes the container exit immediately with
+> `"there appears to be PostgreSQL data in /var/lib/postgresql/data (unused
+> mount/volume)"` — 18 expects the mount one level up, at `/var/lib/postgresql`.
+> I hit this on the first run. `compose.yaml` pins `postgres:16` for the same
+> reason, and the two must match: a volume written by 18 cannot be read by 16,
+> so switching versions on an existing volume fails again with a different
+> error. `docker volume rm taskdata` is the reset.
+>
+> This is the general lesson about `latest`, arriving early and cheaply: it is
+> not a version, it is "whatever changed while you were not looking."
 
 Open a SQL prompt inside it:
 
@@ -260,11 +273,42 @@ SELECT * FROM tasks;       -- the same rows GET /tasks is serving
 
 A GUI client works too — DBeaver, pgAdmin, and TablePlus all connect to
 `localhost:5432` with the user, password, and database from your `.env`, because
-the `db` service publishes that port.
+the `db` service publishes that port. The screenshot below uses
+[pgweb](https://github.com/sosedoff/pgweb), which is itself a container:
 
-> **Screenshot pending.** The `psql` screenshot for this section is captured
-> once the stack is running locally and will land here. The A2 screenshot of the
-> previous SQLite database is at [images/db-browser.png](images/db-browser.png).
+```bash
+docker run --name pgweb --network task-api_default -p 8081:8081 \
+  -e PGWEB_DATABASE_URL="postgres://postgres:YOUR_PASSWORD@db:5432/tasks?sslmode=disable" \
+  -d sosedoff/pgweb
+```
+
+![The tasks table in Postgres](images/postgres-tasks-table.png)
+
+Read the rows carefully, because they are the assignment's two claims in one
+picture. **`Buy milk` is `true`** — that is a `PUT` that went all the way to
+disk. **`Survive a full restart` is there at all** — it was created, then
+`docker compose down` destroyed both containers, then `up` rebuilt them, and the
+row came back from the `taskdata` volume. And the ids jump from 4 to 7, because
+5 and 6 were deleted: `serial` never reuses a number, which is exactly what you
+want from a primary key.
+
+The same rows from psql, at the same moment:
+
+```
+$ docker compose exec db psql -U postgres -d tasks -c 'SELECT * FROM tasks ORDER BY id;'
+
+ id |         title          | done
+----+------------------------+------
+  1 | Learn FastAPI          | f
+  2 | Build CRUD API         | f
+  3 | Publish to GitHub      | f
+  4 | Buy milk               | t
+  7 | Survive a full restart | f
+(5 rows)
+```
+
+The A2 screenshot of the previous SQLite database is at
+[images/db-browser.png](images/db-browser.png), for comparison.
 
 ## Parameterized queries
 
@@ -306,13 +350,9 @@ python smoke_test.py
 
 It creates a throwaway `tasks_test` database, so your real tasks are never touched.
 
-> **Current status, stated honestly:** Docker is not yet installed on the machine
-> this was written on, so `smoke_test.py` has not been run against Postgres yet.
-> What *has* been verified without a database: all five endpoints are registered,
-> `POST` and body-validation failures return **400** with an `{"error": ...}` body
-> (not FastAPI's 422), `/health` returns **503** with `db: "down"` when the
-> database is unreachable, and a missing `DATABASE_URL` fails with a message that
-> names `.env.example`. 19 checks, all passing. The rest needs the stack up.
+```
+All 24 checks passed.
+```
 
 They pass unchanged. That is the interesting part, and it is now true across **three** storage engines: a Python list, a SQLite file, and a Postgres server. The tests describe what the API promises — these five URLs, these shapes, these status codes — and the promise never depended on where the bytes were kept.
 

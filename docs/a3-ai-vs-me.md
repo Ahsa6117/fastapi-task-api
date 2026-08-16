@@ -15,12 +15,11 @@ than handing it to a different assistant.
 
 Both prompts are in [a3-ai-prompt.md](a3-ai-prompt.md).
 
-**How much of this is verified.** Every finding below comes from reading the
-generated code line by line and from parsing all three `compose.yaml` files to
-compare them mechanically. Docker is not yet installed on this machine, so
-neither AI stack has been *run* — the "it works first try" claims are about
-structure, not observed behaviour, and they are marked as such. The runtime
-comparison lands once the stack is up.
+**How much of this is verified.** All of it. Both AI stacks were built and run
+with `docker compose up -d --build`, exercised with `curl`, taken through a
+`down`/`up` persistence cycle, and checked for a leaked `.env` inside the built
+image. Every finding below was first predicted from reading the code and then
+confirmed at runtime; the raw output is quoted where it is interesting.
 
 ---
 
@@ -33,8 +32,33 @@ seeds three tasks only when the count is zero, and does all five CRUD operations
 with `%s` placeholders throughout. The container part of the assignment — the
 genuinely new part — it got right.
 
-(Not yet run — see the caveat above. Structure reviewed and compose parsed;
-runtime behaviour unconfirmed.)
+Confirmed by running it: `docker compose up -d --build` brought both containers
+up first try, the db went `Waiting → Healthy` before the api started, the API
+answered 3 seconds later, and the three seed tasks were there. A `down` followed
+by an `up` returned byte-identical JSON — **persistence passed**. Checking inside
+the running container, `/app/.env` does not exist, so no secret was baked into
+the image.
+
+Here is the whole behavioural gap in one block of real output:
+
+```
+                          AI v1                    mine
+GET /tasks/999            404 {"detail": ...}      404 {"error": ...}
+POST {"title":"   "}      201  <-- stored it       400
+POST {}                   422                      400
+PUT  {"done":true}        422  <-- not partial     200
+DELETE                    204, 0 bytes             204, 0 bytes
+```
+
+The `201` on the third line is the one that actually cost something. The blank
+task was created, and it was still sitting in the table after the restart:
+
+```
+{"id":6,"title":"   ","done":false}
+```
+
+A row that no user asked for, that no UI can display, and that the API will hand
+back forever.
 
 Everything I found is in the parts my prompt described in slogans rather than in
 detail. That is the same lesson as the A2 round, arriving in a new costume.
@@ -141,7 +165,21 @@ specification is only as complete as your memory of which choices were choices.
 Prompt v2 is v1 plus one paragraph spelling out the exact response behaviour,
 one on the `db` hostname, one on startup readiness, and one on `.dockerignore`.
 
-**In one sentence: every behavioural difference disappeared.** v2 returns
+**In one sentence: every behavioural difference disappeared** — and running it
+confirms that, line for line:
+
+```
+                          AI v2      wanted
+GET /tasks/999            404 {"error": "Task not found"}   yes
+POST {"title":"   "}      400                               yes
+POST {}                   400                               yes
+PUT  {"done":true}        200 {"id":1,...,"done":true}       yes  (partial!)
+DELETE                    204, 0 bytes                      yes
+persistence down/up       identical JSON                    yes
+.env inside the image     absent                            yes
+```
+
+v2 returns
 `{"error": ...}` everywhere, 400 for invalid bodies, a genuinely partial `PUT`
 that merges against the existing row, a bare 204, and a `TaskCreate` model that
 accepts only `title` and strips it. It has the `wait_for_database` retry loop,
