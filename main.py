@@ -11,16 +11,17 @@ import db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Runs once when the server starts: creates tasks.db, the tasks
-    # table, and the three example tasks if the table is still empty.
+    # Runs once when the server starts: waits for Postgres to accept
+    # connections, creates the tasks table, and inserts the three example
+    # tasks if the table is still empty.
     db.init_db()
     yield
 
 
 app = FastAPI(
     title="Task API",
-    version="2.0",
-    description="A small CRUD API for managing to-do tasks, stored in SQLite.",
+    version="3.0",
+    description="A small CRUD API for managing to-do tasks, stored in PostgreSQL.",
     lifespan=lifespan,
 )
 
@@ -67,14 +68,35 @@ async def validation_exception_handler(
 def read_root():
     return {
         "name": "Task API",
-        "version": "2.0",
+        "version": "3.0",
         "endpoints": ["/tasks", "/stats"],
     }
 
 
-@app.get("/health", summary="Check server health")
+@app.get("/health", summary="Check server and database health")
 def health_check():
-    return {"status": "ok"}
+    """Report whether the app is up *and* its database answers.
+
+    An app that is running but cannot reach its database is not healthy --
+    it will fail every real request. So this runs SELECT 1 and returns 503
+    when that fails. A load balancer polls exactly this kind of endpoint
+    and stops sending traffic to any instance that stops returning 200,
+    which is how a bad instance gets taken out of rotation automatically.
+    """
+    database_ok = db.ping()
+
+    body = {
+        "status": "ok" if database_ok else "degraded",
+        "db": "ok" if database_ok else "down",
+    }
+
+    if not database_ok:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content=body,
+        )
+
+    return body
 
 
 # -------------------------
