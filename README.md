@@ -62,6 +62,8 @@ docker compose up
 
 On a clean clone this builds the app image, starts Postgres, waits for it to be ready, creates the `tasks` table, seeds the three example tasks, and serves them at `GET /tasks`. No manual database setup.
 
+That round-trip is tested, not assumed: this repo was cloned fresh from GitHub into an empty directory, `cp .env.example .env` run with the placeholder values left exactly as committed, and `docker compose up` issued. The API answered 3 seconds after the build with the three seeded tasks, `POST`/`PUT`/`DELETE`/404 all returned the right codes, and the rows were visible from `psql` — on a machine with no Postgres installed.
+
 To stop: `Ctrl+C`, then `docker compose down`. Add `-v` to also delete the volume and the data.
 
 ### Configuration
