@@ -2,6 +2,11 @@
 __pycache__/
 *.pyc
 
-# The database is created automatically on first run, so every clone
-# starts from a fresh, freshly seeded tasks.db.
+# Secrets. The real connection string (with the database password) lives
+# in .env and must never be committed. .env.example is the committed copy
+# with placeholder values, so a stranger knows which keys to set.
+.env
+
+# The SQLite database from Assignment A2. Postgres replaced it, but the
+# file is still ignored so no local copy sneaks into a commit.
 tasks.db
