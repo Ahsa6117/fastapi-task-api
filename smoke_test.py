@@ -1,23 +1,55 @@
-"""The Assignment 1 endpoint checks, run against the SQLite version.
+"""The Assignment 1 endpoint checks, run against the Postgres version.
 
-These are the same requests and the same expected responses as before the
-storage layer moved from a Python list to tasks.db. They pass unchanged,
-which is the proof that storage is an implementation detail.
+These are the same requests and the same expected responses as when tasks
+lived in a Python list (A1) and in a tasks.db file (A2). They pass
+unchanged against a third storage engine, which is the proof that storage
+is an implementation detail: the contract lives in the routes, not in the
+database.
+
+The checks run against a throwaway database (tasks_test) that is dropped
+and recreated each run, so your real tasks are never touched.
 
 Run with:  python smoke_test.py
+(the Postgres container must be up -- docker compose up -d db)
 """
 
-import tempfile
-from pathlib import Path
+import os
 
-from fastapi.testclient import TestClient
+import psycopg
+from dotenv import load_dotenv
 
-import db
+load_dotenv()
 
-# Use a throwaway database so running the checks never touches tasks.db.
-db.DB_PATH = Path(tempfile.mkdtemp()) / "test.db"
+TEST_DB = "tasks_test"
 
-import main  # noqa: E402  (imported after DB_PATH is redirected)
+
+def build_test_database() -> str:
+    """Drop and recreate tasks_test, and return its connection string."""
+    url = os.getenv("DATABASE_URL")
+
+    if not url:
+        raise SystemExit(
+            "DATABASE_URL is not set. Copy .env.example to .env first."
+        )
+
+    # Connect to the built-in "postgres" database, because you cannot drop
+    # or create a database while you are connected to it.
+    admin_url = url.rsplit("/", 1)[0] + "/postgres"
+
+    # autocommit: CREATE DATABASE is not allowed inside a transaction.
+    with psycopg.connect(admin_url, autocommit=True) as connection:
+        connection.execute(f"DROP DATABASE IF EXISTS {TEST_DB}")
+        connection.execute(f"CREATE DATABASE {TEST_DB}")
+
+    return url.rsplit("/", 1)[0] + "/" + TEST_DB
+
+
+# Redirect the app at the throwaway database *before* importing it.
+os.environ["DATABASE_URL"] = build_test_database()
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import main  # noqa: E402  (imported after DATABASE_URL is redirected)
 
 checks_run = 0
 
@@ -34,6 +66,11 @@ with TestClient(main.app) as client:
     response = client.get("/tasks")
     check("GET /tasks -> 200", response.status_code, 200)
     check("seeds exactly three tasks", len(response.json()), 3)
+
+    print("Health")
+    response = client.get("/health")
+    check("GET /health -> 200", response.status_code, 200)
+    check("health reports the database", response.json()["db"], "ok")
 
     print("Read")
     response = client.get("/tasks/1")
@@ -61,6 +98,15 @@ with TestClient(main.app) as client:
         client.post("/tasks", json={}).status_code,
         400,
     )
+
+    print("Parameterized queries")
+    # If the title were glued into the SQL text this would drop the table
+    # and every check after it would fail. It is stored as plain text.
+    injection = "'); DROP TABLE tasks; --"
+    response = client.post("/tasks", json={"title": injection})
+    check("a SQL-looking title is stored as text", response.json()["title"], injection)
+    check("the table is still there", client.get("/tasks").status_code, 200)
+    client.delete(f"/tasks/{response.json()['id']}")
 
     print("Update")
     task_id = created["id"]
@@ -98,7 +144,7 @@ with TestClient(main.app) as client:
     )
 
 print("\nPersistence")
-# A second client is a second startup against the same database file.
+# A second client is a second startup against the same database.
 with TestClient(main.app) as client:
     check(
         "seed did not run twice",
