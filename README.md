@@ -19,6 +19,18 @@ This is Assignment 1's API with its storage swapped for the third time. The endp
 
 Three storage engines, one API contract. `smoke_test.py` still contains the Assignment 1 checks, unmodified, and all 24 pass against Postgres — see [Testing](#testing).
 
+## Also in this repo: the Auth API (Assignment A4)
+
+`auth/` is a second, separate FastAPI app that adds authentication with **Supabase Auth** — sign up, log in, log out, and routes that answer only for a verified bearer token. It has its own README:
+
+**[auth/README.md](auth/README.md)** — setup, the endpoint table, the full `curl` cycle, and the Swagger screenshots.
+
+```bash
+uvicorn auth.main:app --reload --port 8000    # http://localhost:8000/docs
+```
+
+The Task API below is unchanged by it. They share a repo, a virtualenv, and a `.env`; they share no code.
+
 ## Features
 
 - Create, read, update, and delete tasks
