@@ -12,13 +12,15 @@ Step 4 is the only part that decides whether a door opens.
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from supabase import AuthApiError, AuthError, AuthRetryableError
 
 from auth import supabase_client
+from auth.security import get_current_user
 
 
 @asynccontextmanager
@@ -71,6 +73,18 @@ def error(status_code: int, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"error": message})
 
 
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(
+    request: Request,
+    exc: StarletteHTTPException,
+):
+    # FastAPI's own body is {"detail": ...}. The guard in auth/security.py
+    # raises HTTPException, so without this one handler a 401 from the
+    # guard would answer in a different shape from every other error the
+    # API returns.
+    return error(exc.status_code, str(exc.detail))
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(
     request: Request,
@@ -97,7 +111,7 @@ def require_credentials(body: Credentials) -> JSONResponse | None:
 
 
 def safe_user(user) -> dict:
-    """Pick the handful of user fields that are safe to send back.
+    """Pick the handful of Supabase user fields that are safe to send.
 
     Supabase's user object carries more than a client needs. Returning a
     deliberate subset means a future Supabase field cannot accidentally
@@ -108,6 +122,16 @@ def safe_user(user) -> dict:
         "email": user.email,
         "created_at": str(user.created_at),
     }
+
+
+def public_fields(user: dict) -> dict:
+    """Trim the dict the guard built down to what a client may see.
+
+    The guard keeps the caller's access token on the user dict so routes
+    like logout can act on their session. That token must never travel
+    back out in a response body.
+    """
+    return {key: user[key] for key in ("id", "email", "created_at")}
 
 
 # -------------------------
@@ -229,79 +253,65 @@ def public_info():
 
 
 # -------------------------
-# Protected endpoint
+# Protected endpoints
 # -------------------------
-
-def extract_bearer_token(authorization: str | None) -> str | None:
-    """Pull the token out of an "Authorization: Bearer <token>" header.
-
-    Careful parsing matters more than it looks. All of these must fail
-    rather than sneak through:
-
-        (no header at all)          -> None
-        "Bearer"                    -> None   (scheme, no token)
-        "Bearer "                   -> None   (empty token)
-        "<token>"                   -> None   (no scheme; not a bearer)
-        "Basic abc123"              -> None   (wrong scheme)
-
-    The scheme comparison is case-insensitive because RFC 7235 says the
-    scheme is, so "bearer abc" is a valid header, not an attack.
-    """
-    if not authorization:
-        return None
-
-    parts = authorization.split(maxsplit=1)
-
-    if len(parts) != 2:
-        return None
-
-    scheme, token = parts
-
-    if scheme.lower() != "bearer":
-        return None
-
-    token = token.strip()
-
-    return token or None
-
+#
+# Every route below is protected by exactly one thing: the
+# get_current_user dependency. None of them contain a line of auth code
+# of their own -- adding a locked door is now one argument long.
 
 @app.get("/protected/profile", summary="Read private profile data")
-def protected_profile(request: Request):
-    """Verify the presented token with Supabase, then answer.
+def protected_profile(user: dict = Depends(get_current_user)):
+    return {"user": public_fields(user)}
 
-    get_user() is a real network call to Supabase, which is exactly why
-    its answer can be trusted: Supabase signed the token, so only
-    Supabase can say whether this string is a genuine, unexpired token
-    it issued. A token with one character changed no longer matches its
-    own signature and is rejected there, not here.
+
+@app.get("/protected/dashboard", summary="Read the user's dashboard")
+def protected_dashboard(user: dict = Depends(get_current_user)):
+    """The proof that the guard is reusable.
+
+    This route was added with no new auth code: one dependency, and it
+    already rejects a missing token, a malformed header, and a tampered
+    token exactly the way /protected/profile does.
     """
-    token = extract_bearer_token(request.headers.get("Authorization"))
+    return {
+        "message": f"Welcome back, {user['email']}!",
+        "user_id": user["id"],
+        "items": ["Your private dashboard is empty for now."],
+    }
 
-    if token is None:
-        return error(status.HTTP_401_UNAUTHORIZED, "Access token required")
 
+@app.post(
+    "/auth/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+    summary="End the user's session",
+)
+def logout(user: dict = Depends(get_current_user)):
+    """Revoke the caller's session at Supabase.
+
+    Worth being honest about what this can and cannot do. It revokes the
+    refresh token, so the session cannot be extended and the client is
+    logged out for good. It cannot make the *access* token stop
+    verifying: a JWT is stateless and stays valid until it expires,
+    which is exactly why access tokens are short-lived (an hour here).
+
+    The token is passed explicitly rather than through the client's
+    stored session. This server handles many users through one shared
+    Supabase client, and mutating that client's session per request
+    would let one caller's logout land on another caller's session.
+    """
     try:
-        result = supabase_client.get_client().auth.get_user(token)
+        supabase_client.get_client().auth.admin.sign_out(
+            user["access_token"], "global"
+        )
     except AuthRetryableError:
         return error(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Could not reach the identity provider",
         )
     except (AuthApiError, AuthError):
-        # Expired, tampered with, revoked, or never ours to begin with.
-        # The client learns nothing about which -- that detail only ever
-        # helps someone probing the door.
-        return error(
-            status.HTTP_401_UNAUTHORIZED, "Invalid or expired token"
-        )
+        # The session was already gone -- logging out twice is not an
+        # error worth showing a user.
+        pass
 
-    # Belt and braces: some SDK versions answer with an empty user
-    # instead of raising. Trusting get_user without checking what came
-    # back is the classic way an "authenticated" route lets a stranger
-    # in with user = None.
-    if result is None or result.user is None:
-        return error(
-            status.HTTP_401_UNAUTHORIZED, "Invalid or expired token"
-        )
-
-    return {"user": safe_user(result.user)}
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
