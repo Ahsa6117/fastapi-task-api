@@ -267,16 +267,41 @@ def extract_bearer_token(authorization: str | None) -> str | None:
 
 @app.get("/protected/profile", summary="Read private profile data")
 def protected_profile(request: Request):
-    """Stage 2: only checks that *a* token was presented.
+    """Verify the presented token with Supabase, then answer.
 
-    Nothing here verifies the token yet -- any string after "Bearer "
-    gets in. That is the point of doing this stage on its own: the door
-    exists and the header parsing is proven before the guard who
-    inspects the pass is hired in Stage 3.
+    get_user() is a real network call to Supabase, which is exactly why
+    its answer can be trusted: Supabase signed the token, so only
+    Supabase can say whether this string is a genuine, unexpired token
+    it issued. A token with one character changed no longer matches its
+    own signature and is rejected there, not here.
     """
     token = extract_bearer_token(request.headers.get("Authorization"))
 
     if token is None:
         return error(status.HTTP_401_UNAUTHORIZED, "Access token required")
 
-    return {"message": "A token was presented (not verified yet)"}
+    try:
+        result = supabase_client.get_client().auth.get_user(token)
+    except AuthRetryableError:
+        return error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Could not reach the identity provider",
+        )
+    except (AuthApiError, AuthError):
+        # Expired, tampered with, revoked, or never ours to begin with.
+        # The client learns nothing about which -- that detail only ever
+        # helps someone probing the door.
+        return error(
+            status.HTTP_401_UNAUTHORIZED, "Invalid or expired token"
+        )
+
+    # Belt and braces: some SDK versions answer with an empty user
+    # instead of raising. Trusting get_user without checking what came
+    # back is the classic way an "authenticated" route lets a stranger
+    # in with user = None.
+    if result is None or result.user is None:
+        return error(
+            status.HTTP_401_UNAUTHORIZED, "Invalid or expired token"
+        )
+
+    return {"user": safe_user(result.user)}
