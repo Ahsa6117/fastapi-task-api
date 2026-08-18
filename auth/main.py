@@ -216,3 +216,67 @@ def login(body: Credentials):
         "expires_in": session.expires_in,
         "user": safe_user(result.user),
     }
+
+
+# -------------------------
+# Public endpoint
+# -------------------------
+
+@app.get("/public/info", summary="Read public, open data")
+def public_info():
+    """The lobby. No token, no header, no questions asked."""
+    return {"message": "Welcome stranger! This info is public."}
+
+
+# -------------------------
+# Protected endpoint
+# -------------------------
+
+def extract_bearer_token(authorization: str | None) -> str | None:
+    """Pull the token out of an "Authorization: Bearer <token>" header.
+
+    Careful parsing matters more than it looks. All of these must fail
+    rather than sneak through:
+
+        (no header at all)          -> None
+        "Bearer"                    -> None   (scheme, no token)
+        "Bearer "                   -> None   (empty token)
+        "<token>"                   -> None   (no scheme; not a bearer)
+        "Basic abc123"              -> None   (wrong scheme)
+
+    The scheme comparison is case-insensitive because RFC 7235 says the
+    scheme is, so "bearer abc" is a valid header, not an attack.
+    """
+    if not authorization:
+        return None
+
+    parts = authorization.split(maxsplit=1)
+
+    if len(parts) != 2:
+        return None
+
+    scheme, token = parts
+
+    if scheme.lower() != "bearer":
+        return None
+
+    token = token.strip()
+
+    return token or None
+
+
+@app.get("/protected/profile", summary="Read private profile data")
+def protected_profile(request: Request):
+    """Stage 2: only checks that *a* token was presented.
+
+    Nothing here verifies the token yet -- any string after "Bearer "
+    gets in. That is the point of doing this stage on its own: the door
+    exists and the header parsing is proven before the guard who
+    inspects the pass is hired in Stage 3.
+    """
+    token = extract_bearer_token(request.headers.get("Authorization"))
+
+    if token is None:
+        return error(status.HTTP_401_UNAUTHORIZED, "Access token required")
+
+    return {"message": "A token was presented (not verified yet)"}
