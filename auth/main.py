@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -34,16 +35,75 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# Swagger UI groups the routes under these headings, in this order.
+TAGS = [
+    {
+        "name": "auth",
+        "description": (
+            "Sign up, log in, log out. Supabase owns the accounts and "
+            "the passwords; this API never stores either."
+        ),
+    },
+    {
+        "name": "public",
+        "description": "Open routes. No token, no header, no questions.",
+    },
+    {
+        "name": "protected",
+        "description": (
+            "Locked routes. Log in, click **Authorize** above, paste "
+            "the access_token, and these answer 200 instead of 401."
+        ),
+    },
+]
+
 app = FastAPI(
     title="Auth API",
     version="4.0",
     description=(
-        "A secured API using Supabase Auth as its Identity Provider. "
-        "Sign up, log in, log out, and reach protected routes with a "
-        "verified bearer token."
+        "A secured API using **Supabase Auth** as its Identity "
+        "Provider.\n\n"
+        "**How to use this page**\n\n"
+        "1. `POST /auth/signup` with an email and a password.\n"
+        "2. `POST /auth/login` with the same pair, and copy the "
+        "`access_token` out of the response.\n"
+        "3. Click the **Authorize** padlock at the top right and "
+        "paste that token.\n"
+        "4. Every route with a padlock now answers 200. Click "
+        "Authorize -> Logout, or change one character of the "
+        "token, and they answer 401 again.\n\n"
+        "Errors always come back as `{\"error\": ...}`."
     ),
+    openapi_tags=TAGS,
     lifespan=lifespan,
 )
+
+
+# Reusable Swagger response documentation. Written once here rather than
+# spelled out on every route, so the documented failures cannot drift
+# apart from each other.
+UNAUTHORIZED_RESPONSE = {
+    "description": "Missing, malformed, or invalid/expired token",
+    "content": {
+        "application/json": {
+            "example": {"error": "Invalid or expired token"}
+        }
+    },
+}
+BAD_REQUEST_RESPONSE = {
+    "description": "Missing email or password",
+    "content": {
+        "application/json": {"example": {"error": "Email is required"}}
+    },
+}
+UNAVAILABLE_RESPONSE = {
+    "description": "Supabase could not be reached",
+    "content": {
+        "application/json": {
+            "example": {"error": "Could not reach the identity provider"}
+        }
+    },
+}
 
 
 # -------------------------
@@ -135,10 +195,48 @@ def public_fields(user: dict) -> dict:
 
 
 # -------------------------
+# Swagger UI
+# -------------------------
+#
+# FastAPI serves Swagger UI at /docs for free. The padlocks come from
+# the HTTPBearer dependency in auth/security.py: because the guard is a
+# dependency, the routes it protects are the routes marked locked here,
+# and the two can never drift apart.
+
+def custom_openapi() -> dict:
+    """The generated schema, minus a status code this API never sends.
+
+    FastAPI documents a 422 on any route with a request body. This API
+    turns validation failures into 400s (see the handler above), so a
+    documented 422 would be a promise the code does not keep. Stripping
+    it here rather than hand-writing the schema keeps the docs
+    generated-from-code, which is the reason they stay honest.
+    """
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        tags=app.openapi_tags,
+        routes=app.routes,
+    )
+
+    for operations in schema["paths"].values():
+        for operation in operations.values():
+            operation.get("responses", {}).pop("422", None)
+
+    app.openapi_schema = schema
+
+    return schema
+
+
+app.openapi = custom_openapi
+
+
+# -------------------------
 # General endpoints
 # -------------------------
 
-@app.get("/", summary="Describe the API")
+@app.get("/", tags=["public"], summary="Describe the API")
 def read_root():
     return {
         "name": "Auth API",
@@ -155,7 +253,27 @@ def read_root():
 @app.post(
     "/auth/signup",
     status_code=status.HTTP_201_CREATED,
+    tags=["auth"],
     summary="Create a new user account",
+    responses={
+        201: {
+            "description": "Account created",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "User created",
+                        "user": {
+                            "id": "8f14e45f-ceea-467a-9f8c-1b2c3d4e5f60",
+                            "email": "test@example.com",
+                            "created_at": "2026-08-18 10:00:00+00:00",
+                        },
+                    }
+                }
+            },
+        },
+        400: BAD_REQUEST_RESPONSE,
+        503: UNAVAILABLE_RESPONSE,
+    },
 )
 def signup(body: Credentials):
     """Register a user with Supabase.
@@ -195,7 +313,41 @@ def signup(body: Credentials):
     )
 
 
-@app.post("/auth/login", summary="Authenticate and receive a JWT")
+@app.post(
+    "/auth/login",
+    tags=["auth"],
+    summary="Authenticate and receive a JWT",
+    responses={
+        200: {
+            "description": "Signed in",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIs...",
+                        "refresh_token": "v1v2h3k4...",
+                        "token_type": "bearer",
+                        "expires_in": 3600,
+                        "user": {
+                            "id": "8f14e45f-ceea-467a-9f8c-1b2c3d4e5f60",
+                            "email": "test@example.com",
+                            "created_at": "2026-08-18 10:00:00+00:00",
+                        },
+                    }
+                }
+            },
+        },
+        400: BAD_REQUEST_RESPONSE,
+        401: {
+            "description": "Wrong email or password",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Invalid login credentials"}
+                }
+            },
+        },
+        503: UNAVAILABLE_RESPONSE,
+    },
+)
 def login(body: Credentials):
     """Exchange credentials for an access token.
 
@@ -246,7 +398,11 @@ def login(body: Credentials):
 # Public endpoint
 # -------------------------
 
-@app.get("/public/info", summary="Read public, open data")
+@app.get(
+    "/public/info",
+    tags=["public"],
+    summary="Read public, open data",
+)
 def public_info():
     """The lobby. No token, no header, no questions asked."""
     return {"message": "Welcome stranger! This info is public."}
@@ -260,12 +416,22 @@ def public_info():
 # get_current_user dependency. None of them contain a line of auth code
 # of their own -- adding a locked door is now one argument long.
 
-@app.get("/protected/profile", summary="Read private profile data")
+@app.get(
+    "/protected/profile",
+    tags=["protected"],
+    summary="Read private profile data",
+    responses={401: UNAUTHORIZED_RESPONSE, 503: UNAVAILABLE_RESPONSE},
+)
 def protected_profile(user: dict = Depends(get_current_user)):
     return {"user": public_fields(user)}
 
 
-@app.get("/protected/dashboard", summary="Read the user's dashboard")
+@app.get(
+    "/protected/dashboard",
+    tags=["protected"],
+    summary="Read the user's dashboard",
+    responses={401: UNAUTHORIZED_RESPONSE, 503: UNAVAILABLE_RESPONSE},
+)
 def protected_dashboard(user: dict = Depends(get_current_user)):
     """The proof that the guard is reusable.
 
@@ -284,7 +450,13 @@ def protected_dashboard(user: dict = Depends(get_current_user)):
     "/auth/logout",
     status_code=status.HTTP_204_NO_CONTENT,
     response_class=Response,
+    tags=["auth"],
     summary="End the user's session",
+    responses={
+        204: {"description": "Signed out"},
+        401: UNAUTHORIZED_RESPONSE,
+        503: UNAVAILABLE_RESPONSE,
+    },
 )
 def logout(user: dict = Depends(get_current_user)):
     """Revoke the caller's session at Supabase.

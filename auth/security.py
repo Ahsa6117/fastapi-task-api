@@ -24,6 +24,12 @@ from auth import supabase_client
 # lets the header arrive as None so the checks below own every failure.
 bearer_scheme = HTTPBearer(
     auto_error=False,
+    # These two are what put the padlock on Swagger UI. Declaring the
+    # scheme as a dependency is enough for FastAPI to add it to
+    # components.securitySchemes and to mark exactly the routes that
+    # depend on it as locked -- the docs cannot drift out of step with
+    # the code, because they are generated from it.
+    bearerFormat="JWT",
     description="Paste the access_token returned by POST /auth/login.",
 )
 
