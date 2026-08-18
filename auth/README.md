@@ -160,6 +160,22 @@ Four decisions inside it that are easy to get wrong:
 
 `POST /auth/logout` revokes the session at Supabase, so the refresh token is dead and the session cannot be extended.
 
+It answers `204` only when Supabase confirmed the revocation, or reported the session was already gone (logging out twice is a no-op, not an error). If Supabase refuses for any other reason the route answers `502` — because a `204` over a failed logout is the worst kind of bug: every test and every user reads "logged out" and believes it, while the session is still alive at the identity provider.
+
+The token is handed to `admin.sign_out(access_token, "global")` explicitly rather than through `auth.sign_out()`. That is not the admin/service-key path it looks like — reading the SDK source, `auth.sign_out()` is a wrapper that fetches the token from the client's *own stored session* and then makes the identical call:
+
+```python
+def sign_out(self, options=None):
+    signout_options = options or {"scope": "global"}
+    with suppress(AuthApiError):                     # <- swallows failures
+        session = self.get_session()
+        access_token = session.access_token if session else None
+        if access_token:
+            self.admin.sign_out(access_token, signout_options["scope"])
+```
+
+Same HTTP request, authenticated as the *user* with the user's own JWT; `admin` names the SDK namespace, not the credential. The service_role key is for admin calls that act on *other* users, and this project makes none. Using the wrapper instead would cost two things: it requires `set_session()` first, and one shared client serving every request means one caller's logout could land on another caller's session — and, as the `suppress(AuthApiError)` line shows, it swallows exactly the failures this route now reports.
+
 It does **not** stop the access token verifying. A JWT is stateless — it is valid because of its signature, not because a server keeps a list, so nothing can un-issue it before it expires. That is exactly why access tokens are short-lived (an hour, by Supabase's default). "Instant logout" is genuinely hard with stateless tokens, and pretending otherwise is how people end up trusting a token that should have been dead.
 
 ## 401 vs 403
@@ -185,7 +201,9 @@ That would mean logging in every hour, which is what `POST /auth/refresh` preven
 python -m auth.smoke_test
 ```
 
-The assignment's checkpoints as one script: signup → login → a real token opens both protected routes → a tampered token is refused → logout. It runs against the real Supabase project in your `.env`, because a rejection is only convincing when something real does the rejecting. Each run signs up a throwaway `smoke-<random>@example.com`, so no account you care about is touched; clear them out from Authentication → Users when they accumulate.
+The assignment's checkpoints as one script: signup → login → a real token opens both protected routes → a tampered token is refused → logout.
+
+The last checks are the ones worth having. A `204` from `/auth/logout` only proves this API reached its last line — it cannot prove Supabase revoked anything. So after logging out, the script asks Supabase directly: the refresh token must now be refused with `401`. It also proves that same refresh call *succeeds* before logout, because a check that can only ever fail is not evidence. It runs against the real Supabase project in your `.env`, because a rejection is only convincing when something real does the rejecting. Each run signs up a throwaway `smoke-<random>@example.com`, so no account you care about is touched; clear them out from Authentication → Users when they accumulate.
 
 ## Project structure
 

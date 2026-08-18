@@ -453,8 +453,18 @@ def protected_dashboard(user: dict = Depends(get_current_user)):
     tags=["auth"],
     summary="End the user's session",
     responses={
-        204: {"description": "Signed out"},
+        204: {"description": "Signed out, or already signed out"},
         401: UNAUTHORIZED_RESPONSE,
+        502: {
+            "description": "Supabase refused the logout; the session may still be alive",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": "Logout was refused by the identity provider"
+                    }
+                }
+            },
+        },
         503: UNAVAILABLE_RESPONSE,
     },
 )
@@ -467,10 +477,26 @@ def logout(user: dict = Depends(get_current_user)):
     verifying: a JWT is stateless and stays valid until it expires,
     which is exactly why access tokens are short-lived (an hour here).
 
-    The token is passed explicitly rather than through the client's
-    stored session. This server handles many users through one shared
-    Supabase client, and mutating that client's session per request
-    would let one caller's logout land on another caller's session.
+    Two things this route does *not* do, both deliberate:
+
+    It does not call auth.sign_out(). That method reads the token from
+    the client's own stored session, so using it would mean calling
+    set_session() first -- and one shared Supabase client serves every
+    request here, so one caller's logout could land on another caller's
+    session. Reading the SDK source settles what is lost by avoiding it:
+    sign_out() is a wrapper that ends up at
+    admin.sign_out(access_token, scope), the identical HTTP call this
+    makes. The name "admin" is about the namespace, not the credential:
+    that endpoint authenticates as the *user*, with the user's own JWT,
+    which is why the SDK's own docstring describes passing "a user's JWT
+    through to admin.sign_out". The service_role key is needed for admin
+    calls that act on *other* users, and none happen here.
+
+    It does not report success it did not get. Supabase refusing the
+    logout used to be swallowed, which meant this route could answer 204
+    while the session was still alive at the identity provider -- the
+    worst kind of bug, because every test and every user sees "logged
+    out" and believes it.
     """
     try:
         supabase_client.get_client().auth.admin.sign_out(
@@ -481,10 +507,23 @@ def logout(user: dict = Depends(get_current_user)):
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Could not reach the identity provider",
         )
-    except (AuthApiError, AuthError):
-        # The session was already gone -- logging out twice is not an
-        # error worth showing a user.
-        pass
+    except AuthApiError as exc:
+        # The one refusal that really is success: the session is already
+        # gone. Logging out twice should be a no-op, not an error.
+        already_gone = exc.code == "session_not_found" or exc.status == 404
+
+        if not already_gone:
+            # Anything else means the session may still be alive. Say so
+            # instead of returning 204 over the top of it.
+            return error(
+                status.HTTP_502_BAD_GATEWAY,
+                "Logout was refused by the identity provider",
+            )
+    except AuthError:
+        return error(
+            status.HTTP_502_BAD_GATEWAY,
+            "Logout was refused by the identity provider",
+        )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

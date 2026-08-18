@@ -94,7 +94,8 @@ with TestClient(app) as client:
     body = response.json()
     token = body["access_token"]
     check("an access token comes back", isinstance(token, str) and len(token) > 20, True)
-    check("a refresh token comes back", isinstance(body["refresh_token"], str), True)
+    refresh_token = body["refresh_token"]
+    check("a refresh token comes back", isinstance(refresh_token, str), True)
     check("a JWT has three parts", len(token.split(".")), 3)
 
     check(
@@ -132,6 +133,25 @@ with TestClient(app) as client:
         False,
     )
 
+    print("Refresh (extras)")
+    # Proven *before* logout, so that the same call failing afterwards
+    # means something. A check that only ever fails is not evidence.
+    response = client.post(
+        "/auth/refresh", json={"refresh_token": refresh_token}
+    )
+    check("POST /auth/refresh -> 200", response.status_code, 200)
+
+    fresh = response.json()
+    check("a new access token comes back", fresh["access_token"] != token, True)
+    check(
+        "the new token opens a locked door",
+        client.get(
+            "/protected/profile",
+            headers={"Authorization": f"Bearer {fresh['access_token']}"},
+        ).status_code,
+        200,
+    )
+
     print("Log out (Stage 4)")
     check(
         "POST /auth/logout with no token -> 401",
@@ -143,8 +163,32 @@ with TestClient(app) as client:
         client.post("/auth/logout", headers=good).status_code,
         204,
     )
-    # Deliberately not asserting that the access token stops working.
-    # It does not: a JWT is stateless and stays valid until it expires.
-    # Logout revokes the refresh token, which is what ends the session.
+
+    # The check that actually proves the logout happened.
+    #
+    # A 204 from this API only says our own route reached its last line.
+    # It could have reached it over a failure Supabase reported -- which
+    # is exactly the bug this exists to catch. So ask Supabase itself:
+    # the session's refresh token must now be dead. Nothing this server
+    # believes can fake that answer.
+    check(
+        "the revoked refresh token is refused -> 401",
+        client.post(
+            "/auth/refresh", json={"refresh_token": fresh["refresh_token"]}
+        ).status_code,
+        401,
+    )
+    check(
+        "the original refresh token is refused too -> 401",
+        client.post(
+            "/auth/refresh", json={"refresh_token": refresh_token}
+        ).status_code,
+        401,
+    )
+
+    # Not asserted: that the access token stops verifying. It does not.
+    # A JWT is stateless and stays valid until it expires -- revoking the
+    # refresh token is what ends the session, and claiming otherwise
+    # would be the same kind of comfortable lie as a 204 over a failure.
 
 print(f"\nAll {checks_run} checks passed against {os.getenv('SUPABASE_URL')}.")

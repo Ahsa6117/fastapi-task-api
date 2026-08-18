@@ -29,6 +29,10 @@ Three storage engines, one API contract. `smoke_test.py` still contains the Assi
 uvicorn auth.main:app --reload --port 8000    # http://localhost:8000/docs
 ```
 
+![Swagger overview: the Authorize padlock and the auth routes](images/a4-swagger-overview.jpg)
+
+![Protected routes with bearer padlocks](images/a4-swagger-padlocks.jpg)
+
 The Task API below is unchanged by it. They share a repo, a virtualenv, and a `.env`; they share no code.
 
 ## Features
