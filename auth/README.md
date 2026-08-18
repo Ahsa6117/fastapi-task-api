@@ -35,6 +35,8 @@ Step 4 is the only thing that decides whether a door opens.
 | `POST` | `/auth/logout` | Revoke the session | `Bearer <token>` | `204` |
 | `GET` | `/protected/profile` | Read private profile data | `Bearer <token>` | `200` |
 | `GET` | `/protected/dashboard` | A second locked route, same guard | `Bearer <token>` | `200` |
+| `GET` | `/protected/admin` | Admin-only data | `Bearer <token>` | `200` |
+| `POST` | `/auth/refresh` | Trade a refresh token for a new access token | none | `200` |
 | `GET` | `/public/info` | Open data | none | `200` |
 | `GET` | `/` | Describe the API | none | `200` |
 
@@ -44,6 +46,7 @@ Failures always come back as `{"error": "..."}`:
 | ------ | ---- |
 | `400` | email or password missing or blank; Supabase refused the signup |
 | `401` | no token, malformed header, or a token that is invalid or expired |
+| `403` | a valid token, from a user who is not an admin |
 | `503` | Supabase could not be reached |
 
 ## Setup
@@ -158,6 +161,23 @@ Four decisions inside it that are easy to get wrong:
 `POST /auth/logout` revokes the session at Supabase, so the refresh token is dead and the session cannot be extended.
 
 It does **not** stop the access token verifying. A JWT is stateless — it is valid because of its signature, not because a server keeps a list, so nothing can un-issue it before it expires. That is exactly why access tokens are short-lived (an hour, by Supabase's default). "Instant logout" is genuinely hard with stateless tokens, and pretending otherwise is how people end up trusting a token that should have been dead.
+
+## 401 vs 403
+
+`/protected/admin` exists to make the difference concrete.
+
+- **401 Unauthorized** — *"I do not know who you are."* No token, a malformed header, an expired or tampered token.
+- **403 Forbidden** — *"I know exactly who you are, and you still may not."* A perfectly valid token belonging to a user without the admin role.
+
+Sending 401 in the second case is a real bug, not a style choice: a client that gets 401 will sensibly try logging in again, and it will keep doing that forever, because logging in was never the problem.
+
+The role is read from Supabase's `app_metadata`, which only the server can write. `user_metadata` is writable by the user, so a role trusted from there is a role anyone can grant themselves at signup. Make an admin from the dashboard: Authentication → Users → the user → `app_metadata` → `{"role": "admin"}`.
+
+## Why access tokens expire, and what refresh is for
+
+Access tokens last an hour. Short-lived is the entire point: a stolen JWT cannot be revoked — it is valid because of its signature, not because a server keeps a list — so the only thing limiting the damage is how soon it dies.
+
+That would mean logging in every hour, which is what `POST /auth/refresh` prevents. The refresh token is long-lived but *can* be revoked (that is what logout does), so it is the one that gets to hold a session open.
 
 ## Testing
 

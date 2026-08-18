@@ -21,7 +21,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from supabase import AuthApiError, AuthError, AuthRetryableError
 
 from auth import supabase_client
-from auth.security import get_current_user
+from auth.security import get_current_user, require_admin
 
 
 @asynccontextmanager
@@ -487,3 +487,114 @@ def logout(user: dict = Depends(get_current_user)):
         pass
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# -------------------------
+# Extras
+# -------------------------
+
+@app.get(
+    "/protected/admin",
+    tags=["protected"],
+    summary="A route only an admin may use",
+    responses={
+        401: UNAUTHORIZED_RESPONSE,
+        403: {
+            "description": "Logged in, but not an admin",
+            "content": {
+                "application/json": {"example": {"error": "Admin role required"}}
+            },
+        },
+        503: UNAVAILABLE_RESPONSE,
+    },
+)
+def protected_admin(user: dict = Depends(require_admin)):
+    """The difference between 401 and 403, as a route.
+
+    An ordinary logged-in user reaching this gets 403, not 401. The
+    distinction is not pedantry: 401 means "I do not know who you are",
+    so a client that receives it will sensibly try logging in again --
+    forever, if the real answer was "I know exactly who you are, and you
+    still may not."
+
+    Grant the role from the Supabase dashboard or a server-side call:
+    app_metadata = {"role": "admin"}. It deliberately is not readable
+    from user_metadata, which users can write themselves -- a role
+    trusted from there is a role anyone can grant themselves at signup.
+    """
+    return {
+        "message": f"Welcome, admin {user['email']}.",
+        "secret": "The admin-only data lives here.",
+    }
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str | None = None
+
+
+@app.post(
+    "/auth/refresh",
+    tags=["auth"],
+    summary="Exchange a refresh token for a new access token",
+    responses={
+        200: {"description": "A fresh access token"},
+        400: {
+            "description": "No refresh token supplied",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Refresh token is required"}
+                }
+            },
+        },
+        401: {
+            "description": "The refresh token is invalid or already used",
+            "content": {
+                "application/json": {
+                    "example": {"error": "Invalid or expired refresh token"}
+                }
+            },
+        },
+        503: UNAVAILABLE_RESPONSE,
+    },
+)
+def refresh(body: RefreshRequest):
+    """Get a new access token without asking for the password again.
+
+    This is the other half of why access tokens expire after an hour.
+    Short-lived access tokens limit the damage of a leaked one -- a
+    stolen token is useless within the hour, and nothing can revoke it
+    before then because it is stateless. The refresh token, which *can*
+    be revoked, is what keeps the user from having to log in hourly.
+    """
+    token = (body.refresh_token or "").strip()
+
+    if not token:
+        return error(
+            status.HTTP_400_BAD_REQUEST, "Refresh token is required"
+        )
+
+    try:
+        result = supabase_client.get_client().auth.refresh_session(token)
+    except AuthRetryableError:
+        return error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Could not reach the identity provider",
+        )
+    except (AuthApiError, AuthError):
+        return error(
+            status.HTTP_401_UNAUTHORIZED, "Invalid or expired refresh token"
+        )
+
+    session = result.session if result else None
+
+    if session is None:
+        return error(
+            status.HTTP_401_UNAUTHORIZED, "Invalid or expired refresh token"
+        )
+
+    return {
+        "access_token": session.access_token,
+        "refresh_token": session.refresh_token,
+        "token_type": "bearer",
+        "expires_in": session.expires_in,
+    }
